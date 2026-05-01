@@ -1,0 +1,13 @@
+src/
+node_modules/
+tsconfig.json
+package.json
+package-lock.json
+bun.lockb
+build.ps1
+*.ts
+*.tsx
+config/
+NUXEN.exe
+*.exe
+_nuxen_update.ps1
