@@ -73,6 +73,7 @@ export interface UpdateCheckResult {
   currentVersion: string;
   downloadUrl?: string;
   assetName?: string;
+  exeName?: string;
 }
 
 export const checkForUpdate = async (): Promise<UpdateCheckResult> => {
@@ -87,8 +88,13 @@ export const checkForUpdate = async (): Promise<UpdateCheckResult> => {
   const remoteVersion = release.tag_name?.replace(/^v/, '') ?? '';
   const hasUpdate = isNewer(remoteVersion, APP_VERSION);
 
-  // Chercher l'asset .exe (ex: Nuxen-1.0.3.exe)
-  const asset = release.assets.find(a => a.name.match(/^Nuxen.*\.exe$/i));
+  // Chercher le zip de distribution (Nuxen-X.X.X.zip)
+  const asset = release.assets.find(a => a.name.match(/^Nuxen.*\.zip$/i))
+    // Fallback: exe direct pour compatibilité avec anciennes releases
+    ?? release.assets.find(a => a.name.match(/^Nuxen.*\.exe$/i));
+
+  // Nom de l'exe dans le zip (même nom, extension .exe)
+  const exeName = asset?.name.replace(/\.zip$/i, '.exe');
 
   return {
     hasUpdate,
@@ -96,6 +102,7 @@ export const checkForUpdate = async (): Promise<UpdateCheckResult> => {
     currentVersion: APP_VERSION,
     downloadUrl: asset?.browser_download_url,
     assetName: asset?.name,
+    exeName,
   };
 };
 
@@ -104,29 +111,20 @@ export const downloadAndApplyUpdate = async (
   onProgress?: (msg: string) => void
 ): Promise<void> => {
   if (!result.downloadUrl || !result.assetName) {
-    throw new Error('Aucun asset .exe trouvé dans la release GitHub');
+    throw new Error('Aucun asset trouvé dans la release GitHub');
   }
 
   const currentExe = process.execPath;
   const currentDir = path.dirname(currentExe);
+  const isZip = result.assetName.endsWith('.zip');
+  const exeName = result.exeName ?? result.assetName.replace(/\.zip$/i, '.exe');
+  const newExe = path.join(currentDir, exeName);
 
-  // Téléchargement dans le dossier temp du système (pas dans le dossier du bot)
-  const tmpExe = path.join(os.tmpdir(), `Nuxen_update_${Date.now()}.exe`);
-
-  onProgress?.(`Téléchargement ${result.assetName}...`);
-  await downloadFile(result.downloadUrl, tmpExe, (pct) => {
-    onProgress?.(`Téléchargement ${result.assetName}... ${pct}%`);
-  });
-  onProgress?.('Téléchargement terminé — remplacement en cours...');
-
-  // Determine the final exe path (same dir, new name)
-  const newExe = path.join(currentDir, result.assetName);
-
-  // Supprimer les anciennes versions Nuxen-*.exe (sauf le current exe en cours d'exécution)
+  // Supprimer les anciennes versions Nuxen-*.exe et .zip dans le dossier
   try {
     const files = fs.readdirSync(currentDir);
     for (const f of files) {
-      if (/^Nuxen.*\.exe$/i.test(f) && f !== result.assetName) {
+      if (/^Nuxen.*\.(exe|zip)$/i.test(f) && f !== result.assetName && f !== exeName) {
         const oldPath = path.join(currentDir, f);
         if (oldPath.toLowerCase() !== currentExe.toLowerCase()) {
           try { fs.unlinkSync(oldPath); } catch { /* ignoré si locked */ }
@@ -135,15 +133,53 @@ export const downloadAndApplyUpdate = async (
     }
   } catch { /* dossier inaccessible, on ignore */ }
 
-  // Inline cmd command: wait 2s, move temp→final, launch new, done
-  // No .ps1 file created — everything inline
-  const cmd = `ping 127.0.0.1 -n 3 > nul & move /y "${tmpExe}" "${newExe}" & start "" "${newExe}"`;
+  if (isZip) {
+    // ─── Téléchargement du ZIP ────────────────────────────────────────────────
+    const tmpZip = path.join(os.tmpdir(), `Nuxen_update_${Date.now()}.zip`);
+    const extractDir = path.join(os.tmpdir(), `Nuxen_extract_${Date.now()}`);
 
-  spawn('cmd.exe', ['/c', cmd], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  }).unref();
+    onProgress?.(`Téléchargement ${result.assetName}...`);
+    await downloadFile(result.downloadUrl, tmpZip, (pct) => {
+      onProgress?.(`Téléchargement ${result.assetName}... ${pct}%`);
+    });
+    onProgress?.('Extraction et remplacement en cours...');
+
+    // Extraction + remplacement via PowerShell inline (sans fichier temporaire)
+    // - Expand-Archive extrait le zip
+    // - On récupère l'exe depuis le dossier extrait
+    // - On le déplace vers le dossier final
+    // - On lance le nouvel exe
+    const cmd = [
+      `ping 127.0.0.1 -n 3 > nul`,
+      `powershell -Command "Expand-Archive -Path '${tmpZip}' -DestinationPath '${extractDir}' -Force"`,
+      `move /y "${extractDir}\\${exeName}" "${newExe}"`,
+      `rmdir /s /q "${extractDir}" 2>nul`,
+      `del /f /q "${tmpZip}" 2>nul`,
+      `start "" "${newExe}"`,
+    ].join(' & ');
+
+    spawn('cmd.exe', ['/c', cmd], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
+  } else {
+    // ─── Fallback: téléchargement direct exe (anciennes releases) ─────────────
+    const tmpExe = path.join(os.tmpdir(), `Nuxen_update_${Date.now()}.exe`);
+
+    onProgress?.(`Téléchargement ${result.assetName}...`);
+    await downloadFile(result.downloadUrl, tmpExe, (pct) => {
+      onProgress?.(`Téléchargement ${result.assetName}... ${pct}%`);
+    });
+    onProgress?.('Remplacement en cours...');
+
+    const cmd = `ping 127.0.0.1 -n 3 > nul & move /y "${tmpExe}" "${newExe}" & start "" "${newExe}"`;
+    spawn('cmd.exe', ['/c', cmd], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    }).unref();
+  }
 
   process.exit(0);
 };
