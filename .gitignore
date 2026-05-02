@@ -11,3 +11,6 @@ config/
 NUXEN.exe
 *.exe
 _nuxen_update.ps1
+
+*.bun-build
+Nuxen*.exe
