@@ -79,8 +79,9 @@ const runTaskAttempt = async (
         'Accept-Language': 'fr-FR,fr;q=0.9',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
       },
-      maxRedirects: 0,
-    });
+        maxRedirects: 0,
+        timeout: 8000, // Verification rapide : si timeout on continue sans Queue-it
+      });
 
     let queueItDetectedUrl: string | null = null;
     if (pageRes.status === 302 || pageRes.status === 301) {

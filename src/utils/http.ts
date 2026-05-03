@@ -73,7 +73,8 @@ export class HttpClient {
       httpAgent: this.agent,
       validateStatus: () => true,
       maxRedirects: config.maxRedirects ?? 5,
-      timeout: 30000,
+      // Priorité : timeout du config, sinon 15s par défaut (était 30s hardcodé)
+      timeout: config.timeout ?? 15000,
     };
 
     const res = await axios(axiosConfig);

@@ -28,7 +28,7 @@ export const solveRecaptchaV3 = async (
   logger.info(taskId, `reCAPTCHA v3 ÔÇö task ${taskIdCapsolver} cr├®├®e, polling...`);
 
   for (let attempt = 0; attempt < 30; attempt++) {
-    await sleep(attempt === 0 ? 2000 : 3000);
+    await sleep(attempt === 0 ? 1000 : 2000);
     const res = await directClient.post(`${CAPSOLVER_URL}/getTaskResult`, {
       clientKey: capsolverKey,
       taskId: taskIdCapsolver,
@@ -71,7 +71,7 @@ export const solveRecaptchaV2 = async (
   logger.info(taskId, `reCAPTCHA v2 ÔÇö task ${taskIdCapsolver} cr├®├®e, polling...`);
 
   for (let attempt = 0; attempt < 25; attempt++) {
-    await sleep(4000);
+    await sleep(attempt === 0 ? 2000 : 3000);
     const res = await directClient.post(`${CAPSOLVER_URL}/getTaskResult`, {
       clientKey: capsolverKey,
       taskId: taskIdCapsolver,
@@ -144,7 +144,7 @@ export const solveRecaptchaInvisible = async (
   if (!taskIdCapsolver) throw new Error(`Capsolver invisible createTask failed: ${JSON.stringify(createRes.data)}`);
 
   for (let attempt = 0; attempt < 25; attempt++) {
-    await sleep(3000);
+    await sleep(attempt === 0 ? 1500 : 2000);
     const res = await directClient.post(`${CAPSOLVER_URL}/getTaskResult`, {
       clientKey: capsolverKey,
       taskId: taskIdCapsolver,
@@ -158,5 +158,5 @@ export const solveRecaptchaInvisible = async (
     }
     if (res.data?.status === 'failed') throw new Error(`Capsolver invisible failed: ${res.data.errorDescription ?? ''}`);
   }
-  throw new Error('Capsolver invisible timeout (75s)');
+  throw new Error('Capsolver invisible timeout (50s)');
 };
