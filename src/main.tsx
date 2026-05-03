@@ -9,8 +9,14 @@ import { validateLicense, type LicenseValidationResult } from './core/license.js
 import { APP_VERSION } from './version.js';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 
 process.title = 'NUXEN';
+
+// Force UTF-8 sur la console Windows (évite les caractères garbled)
+if (process.platform === 'win32') {
+  try { execSync('chcp 65001', { stdio: 'ignore' }); } catch { /* ignore */ }
+}
 
 // Garde le process vivant quoi qu'il arrive — Bun sinon ferme si l'event loop se vide
 process.stdin.resume();
