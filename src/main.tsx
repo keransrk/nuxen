@@ -7,8 +7,26 @@ import { loadConfig, validateConfig, PATHS } from './config/loader.js';
 import { checkForUpdate, downloadAndApplyUpdate, type UpdateCheckResult } from './core/updater.js';
 import { validateLicense, type LicenseValidationResult } from './core/license.js';
 import { APP_VERSION } from './version.js';
+import path from 'path';
+import fs from 'fs';
 
 process.title = 'NUXEN';
+
+// Garde le process vivant quoi qu'il arrive — Bun sinon ferme si l'event loop se vide
+process.stdin.resume();
+
+// ─── Crash log ─────────────────────────────────────────────────────────────────
+const CRASH_LOG = path.join(
+  path.dirname(process.execPath ?? process.argv[1] ?? process.cwd()),
+  'nuxen-crash.log',
+);
+
+const writeCrash = (msg: string) => {
+  try { fs.appendFileSync(CRASH_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch { /* ignore */ }
+};
+
+process.on('uncaughtException', (err) => writeCrash(`CRASH: ${err?.stack ?? err}`));
+process.on('unhandledRejection', (r) => writeCrash(`REJECTION: ${r}`));
 
 // ─── Load configuration ────────────────────────────────────────────────────────
 let _config: ReturnType<typeof loadConfig>['config'];
@@ -21,13 +39,16 @@ try {
   _firstRun = result.firstRun;
 } catch (e: any) {
   _loadError = e?.message ?? String(e);
+  writeCrash(`CONFIG LOAD: ${_loadError}`);
   _config = {} as any;
 }
 
 const configErrors = _loadError ? [] : validateConfig(_config!);
 
-// ─── Screen shown when something prevents startup (waits for keypress) ─────────
-const ExitScreen: React.FC<{ lines: string[]; isError?: boolean }> = ({ lines, isError }) => {
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+const nuxenGradient = gradient(['#9333EA', '#3B82F6']);
+
+const WaitScreen: React.FC<{ lines: string[]; isError?: boolean }> = ({ lines, isError }) => {
   const { exit } = useApp();
   useInput(() => exit());
   return (
@@ -40,22 +61,51 @@ const ExitScreen: React.FC<{ lines: string[]; isError?: boolean }> = ({ lines, i
   );
 };
 
-const nuxenGradient = gradient(['#9333EA', '#3B82F6']);
-
 const LicenseInvalidScreen: React.FC<{ reason: string }> = ({ reason }) => {
   const { exit } = useApp();
-  useInput((_, key) => { if (key.return || key.escape || _.toLowerCase() === 'q') exit(); });
+  useInput(() => exit());
   return (
     <Box flexDirection="column" padding={2} gap={1}>
       <Text>{nuxenGradient('NUXEN')}</Text>
-      <Text color="#EF4444" bold>⚠  Licence invalide</Text>
-      <Text color="#F87171">   {reason}</Text>
+      <Text color="#EF4444" bold>  Licence invalide</Text>
+      <Text color="#F87171">  {reason}</Text>
       <Box marginTop={1} flexDirection="column">
         <Text color="#9CA3AF">Pour obtenir une clé de licence, contacte l'admin.</Text>
         <Text color="#9CA3AF">Édite ensuite license_key dans config.json puis relance.</Text>
       </Box>
       <Box marginTop={1}>
-        <Text color="#6B7280">Appuie sur Q ou Entrée pour quitter.</Text>
+        <Text color="#6B7280">Appuie sur n'importe quelle touche pour quitter.</Text>
+      </Box>
+    </Box>
+  );
+};
+
+const UpdateConfirmScreen: React.FC<{
+  result: UpdateCheckResult;
+  onConfirm: () => void;
+  onSkip: () => void;
+}> = ({ result, onConfirm, onSkip }) => {
+  useInput((char) => {
+    const c = char.toUpperCase();
+    if (c === 'O' || c === 'Y') onConfirm();
+    if (c === 'N') onSkip();
+  });
+  return (
+    <Box flexDirection="column" padding={2} gap={1}>
+      <Text>{nuxenGradient('NUXEN')}</Text>
+      <Text color="#7C3AED" bold>  Mise à jour disponible</Text>
+      <Box gap={2} marginTop={1}>
+        <Text color="#6B7280">Version actuelle :</Text>
+        <Text color="#EF4444">v{result.currentVersion}</Text>
+        <Text color="#6B7280">→</Text>
+        <Text color="#22C55E" bold>v{result.remoteVersion}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color="#D1D5DB">Installer la mise à jour ? </Text>
+        <Text color="#22C55E" bold>[O]</Text>
+        <Text color="#D1D5DB"> oui  </Text>
+        <Text color="#EF4444" bold>[N]</Text>
+        <Text color="#D1D5DB"> non (continuer sans mettre à jour)</Text>
       </Box>
     </Box>
   );
@@ -65,7 +115,8 @@ const LicenseInvalidScreen: React.FC<{ reason: string }> = ({ reason }) => {
 const Root: React.FC = () => {
   type Phase =
     | { phase: 'checkingUpdate' }
-    | { phase: 'update'; result: UpdateCheckResult }
+    | { phase: 'confirmUpdate'; result: UpdateCheckResult }
+    | { phase: 'downloading'; result: UpdateCheckResult }
     | { phase: 'checkingLicense' }
     | { phase: 'licenseInvalid'; reason: string }
     | { phase: 'ready' };
@@ -74,54 +125,45 @@ const Root: React.FC = () => {
 
   useEffect(() => {
     const run = async () => {
-      // 1. Erreur de chargement → skip tout
       if (_loadError || _firstRun) {
         setState({ phase: 'ready' });
         return;
       }
 
-      // 2. Vérification update
+      // 1. Vérification update
       try {
         const result = await checkForUpdate();
         if (result.hasUpdate && result.remoteVersion) {
-          setState({ phase: 'update', result });
-          return;
+          setState({ phase: 'confirmUpdate', result });
+          return; // attend la réponse de l'utilisateur
         }
-      } catch { /* ignore: skip update */ }
+      } catch { /* réseau indispo → on continue */ }
 
-      // 3. Vérification licence
-      setState({ phase: 'checkingLicense' });
-      try {
-        const lic: LicenseValidationResult = await validateLicense(
-          _config.license_key,
-          APP_VERSION,
-        );
-        if (!lic.valid) {
-          setState({ phase: 'licenseInvalid', reason: lic.reason ?? 'Inconnu' });
-          return;
-        }
-      } catch (e: any) {
-        setState({ phase: 'licenseInvalid', reason: e.message ?? 'Erreur validation' });
-        return;
-      }
-
-      setState({ phase: 'ready' });
+      // 2. Vérification licence
+      await runLicenseCheck();
     };
     run();
   }, []);
 
-  // Update available
-  if (state.phase === 'update') {
-    return (
-      <UpdateScreen
-        result={state.result}
-        onDownload={(onProgress) => downloadAndApplyUpdate(state.result, onProgress)}
-        onSkip={() => setState({ phase: 'checkingLicense' })}
-      />
-    );
-  }
+  const runLicenseCheck = async () => {
+    setState({ phase: 'checkingLicense' });
+    try {
+      const lic: LicenseValidationResult = await validateLicense(
+        _config.license_key,
+        APP_VERSION,
+      );
+      if (!lic.valid) {
+        setState({ phase: 'licenseInvalid', reason: lic.reason ?? 'Inconnu' });
+        return;
+      }
+    } catch (e: any) {
+      setState({ phase: 'licenseInvalid', reason: e.message ?? 'Erreur validation' });
+      return;
+    }
+    setState({ phase: 'ready' });
+  };
 
-  // Loading screens
+  // ── Vérif update ──
   if (state.phase === 'checkingUpdate') {
     return (
       <Box padding={1} gap={1}>
@@ -131,6 +173,30 @@ const Root: React.FC = () => {
       </Box>
     );
   }
+
+  // ── Confirmation mise à jour ──
+  if (state.phase === 'confirmUpdate') {
+    return (
+      <UpdateConfirmScreen
+        result={state.result}
+        onConfirm={() => setState({ phase: 'downloading', result: state.result })}
+        onSkip={runLicenseCheck}
+      />
+    );
+  }
+
+  // ── Téléchargement en cours ──
+  if (state.phase === 'downloading') {
+    return (
+      <UpdateScreen
+        result={state.result}
+        onDownload={(onProgress) => downloadAndApplyUpdate(state.result, onProgress)}
+        onSkip={runLicenseCheck}
+      />
+    );
+  }
+
+  // ── Vérif licence ──
   if (state.phase === 'checkingLicense') {
     return (
       <Box padding={1} gap={1}>
@@ -140,20 +206,20 @@ const Root: React.FC = () => {
     );
   }
 
-  // Erreur licence
+  // ── Licence invalide ──
   if (state.phase === 'licenseInvalid') {
     return <LicenseInvalidScreen reason={state.reason} />;
   }
 
-  // Erreur de chargement de config
+  // ── Erreur de config ──
   if (_loadError) {
-    return <ExitScreen lines={[`Erreur chargement config: ${_loadError}`]} isError />;
+    return <WaitScreen lines={[`Erreur chargement config: ${_loadError}`]} isError />;
   }
 
-  // First run
+  // ── Premier lancement ──
   if (_firstRun) {
     return (
-      <ExitScreen lines={[
+      <WaitScreen lines={[
         'Bienvenue sur NUXEN!',
         '',
         'Les fichiers de configuration ont été créés:',
@@ -161,7 +227,7 @@ const Root: React.FC = () => {
         `  • ${PATHS.proxiesDir}\\proxies.txt`,
         `  • ${PATHS.ticketmasterDir}\\example.csv`,
         '',
-        '1. Édite config.json (clé Capsolver + license_key + webhook par défaut)',
+        '1. Édite config.json (clé Capsolver + license_key + webhook)',
         '2. Édite Proxies/proxies.txt (tes proxies, un par ligne)',
         '3. Édite TicketMaster/example.csv ou crée tes propres CSV',
         '4. Relance NUXEN.exe',
@@ -173,4 +239,11 @@ const Root: React.FC = () => {
 };
 
 // ─── Render TUI ────────────────────────────────────────────────────────────────
-render(<Root />, { exitOnCtrlC: true, patchConsole: false });
+try {
+  render(<Root />, { exitOnCtrlC: true, patchConsole: false });
+} catch (err: any) {
+  writeCrash(`RENDER CRASH: ${err?.stack ?? err}`);
+  console.error('\n[NUXEN] Erreur fatale:', err?.message ?? err);
+  console.error('[NUXEN] Détails dans nuxen-crash.log');
+  // stdin.resume() déjà appelé en haut — le process reste ouvert
+}
