@@ -7,6 +7,44 @@ export interface ProxyEntry {
   label: string;
 }
 
+// Pool de proxies avec rotation automatique
+export class ProxyPool {
+  private proxies: ProxyEntry[];
+  private index: number;
+
+  constructor(proxies: ProxyEntry[]) {
+    if (proxies.length === 0) throw new Error('ProxyPool: liste vide');
+    this.proxies = [...proxies];
+    // Depart aleatoire pour repartir la charge
+    this.index = Math.floor(Math.random() * proxies.length);
+  }
+
+  get size(): number { return this.proxies.length; }
+
+  get current(): ProxyEntry { return this.proxies[this.index]; }
+
+  // Passe au proxy suivant (circulaire) et retourne le nouvel actif
+  rotate(): ProxyEntry {
+    this.index = (this.index + 1) % this.proxies.length;
+    return this.proxies[this.index];
+  }
+
+  // Indique si une erreur ressemble a un blocage proxy
+  static isProxyError(err: any): boolean {
+    if (!err) return false;
+    const code: string = err.code ?? '';
+    const msg: string = String(err.message ?? '').toLowerCase();
+    const status: number = err.status ?? err.statusCode ?? 0;
+    // Codes reseau = proxy mort ou bloque
+    if (['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(code)) return true;
+    // 407 = erreur auth proxy, 429 = rate limit
+    if (status === 407 || status === 429) return true;
+    // Messages explicites
+    if (msg.includes('407') || msg.includes('proxy') || msg.includes('tunnel') || msg.includes('connect')) return true;
+    return false;
+  }
+}
+
 export const loadProxyFile = (filename: string): ProxyEntry[] => {
   // Resolution: si chemin relatif, chercher dans Proxies/
   const fullPath = path.isAbsolute(filename)
