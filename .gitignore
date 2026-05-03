@@ -14,3 +14,5 @@ _nuxen_update.ps1
 
 *.bun-build
 Nuxen*.exe
+
+.gh_token

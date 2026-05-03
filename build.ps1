@@ -106,7 +106,11 @@ if ($release) {
     exit 1
   }
 
-  $env:GH_TOKEN = "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"
+  # Token lu depuis la variable d'environnement GH_TOKEN ou depuis .gh_token (non commite)
+  if (-not $env:GH_TOKEN) {
+    $tokenFile = Join-Path $PSScriptRoot ".gh_token"
+    if (Test-Path $tokenFile) { $env:GH_TOKEN = (Get-Content $tokenFile -Raw).Trim() }
+  }
 
   & $ghPath release create "v$version" $zipName `
     --title "NUXEN v$version" `
