@@ -1,6 +1,6 @@
 {
   "name": "nuxen",
-  "version": "1.2.1",
+  "version": "1.2.3",
   "type": "module",
   "dependencies": {
     "axios": "^1.8.4",
@@ -8,11 +8,11 @@
     "gradient-string": "^3.0.0",
     "https-proxy-agent": "^7.0.6",
     "ink": "^5.2.1",
-    "react": "^19.1.0",
-    "react-devtools-core": "^6.1.1"
+    "react": "~18.3.1",
+    "react-devtools-core": "^7.0.1"
   },
   "devDependencies": {
-    "@types/react": "^19.1.2",
+    "@types/react": "~18.3.0",
     "bun-types": "latest"
   }
 }
