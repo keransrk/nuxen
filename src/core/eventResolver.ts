@@ -18,7 +18,7 @@ export const resolveEventUrl = (input: string): EventInfo => {
 
   // Full URL parsing
   const idmanifMatch = trimmed.match(/idmanif[\/=](\d+)/i);
-  if (!idmanifMatch) throw new Error(`URL invalide — idmanif introuvable dans: ${trimmed}`);
+  if (!idmanifMatch) throw new Error(`URL invalide ÔÇö idmanif introuvable dans: ${trimmed}`);
 
   const idmanif = idmanifMatch[1];
 

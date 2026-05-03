@@ -20,11 +20,11 @@ export const generateCookies = async (
   proxyUrl: string,
   taskId: number
 ): Promise<TmCookies> => {
-  // delayMs: 0 pour la génération cookies — requêtes auth, pas du scraping
+  // delayMs: 0 pour la g├®n├®ration cookies ÔÇö requ├¬tes auth, pas du scraping
   const client = new HttpClient({ proxyUrl, delayMs: 0 });
 
-  // ─── Step 1: GET /eps-mgr → extraire epsfToken ────────────────────────────
-  logger.info(taskId, 'Génération cookies — GET /eps-mgr...');
+  // ÔöÇÔöÇÔöÇ Step 1: GET /eps-mgr ÔåÆ extraire epsfToken ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  logger.info(taskId, 'G├®n├®ration cookies ÔÇö GET /eps-mgr...');
   const epsRes = await client.get(`${TM_BASE}/eps-mgr`, {
     headers: {
       Accept: '*/*',
@@ -38,16 +38,16 @@ export const generateCookies = async (
 
   const body = typeof epsRes.data === 'string' ? epsRes.data : JSON.stringify(epsRes.data);
   const match = body.match(/var epsfToken\s*=\s*'([^']+)'/);
-  if (!match) throw new Error('epsfToken introuvable dans /eps-mgr — proxy invalide ou bloqué');
+  if (!match) throw new Error('epsfToken introuvable dans /eps-mgr ÔÇö proxy invalide ou bloqu├®');
 
   const eps_sid = match[1];
   logger.info(taskId, `eps_sid extrait: ${eps_sid.slice(0, 30)}...`);
 
-  // ─── Step 2: Résoudre reCAPTCHA v3 ────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Step 2: R├®soudre reCAPTCHA v3 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const recaptchaToken = await solveRecaptchaV3(capsolverKey, taskId);
 
-  // ─── Step 3: POST /epsf/gec/v3/FREvent ────────────────────────────────────
-  logger.info(taskId, 'Génération cookies — POST /epsf/gec/v3/FREvent...');
+  // ÔöÇÔöÇÔöÇ Step 3: POST /epsf/gec/v3/FREvent ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  logger.info(taskId, 'G├®n├®ration cookies ÔÇö POST /epsf/gec/v3/FREvent...');
   const gecRes = await client.post(
     `${TM_BASE}/epsf/gec/v3/FREvent`,
     JSON.stringify({
@@ -72,7 +72,7 @@ export const generateCookies = async (
     }
   );
 
-  // ─── Step 4: Assembler les cookies ────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Step 4: Assembler les cookies ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const jar = client.cookieJar.toObject();
   const SID = jar['SID'] || '';
   const BID = jar['BID'] || '';
@@ -80,13 +80,13 @@ export const generateCookies = async (
 
   const missing = ['SID', 'BID', 'tmpt'].filter(n => !jar[n]);
   if (missing.length > 0) {
-    logger.warn(taskId, `Cookies manquants: ${missing.join(', ')} — statut gec: ${gecRes.status}`);
+    logger.warn(taskId, `Cookies manquants: ${missing.join(', ')} ÔÇö statut gec: ${gecRes.status}`);
   }
 
   const cookieString = `eps_sid=${eps_sid}; SID=${SID}; BID=${BID}; tmpt=${tmpt}`;
 
   if (missing.length === 0) {
-    logger.success(taskId, 'Cookies TM générés avec succès');
+    logger.success(taskId, 'Cookies TM g├®n├®r├®s avec succ├¿s');
   }
 
   return {

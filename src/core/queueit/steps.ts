@@ -37,7 +37,7 @@ export const runQueueIt = async (
     logger.info(taskId, msg);
   };
 
-  // ─── STEP 1: Parser l'URL Queue-it ─────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 1: Parser l'URL Queue-it ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const urlObj = new URL(queueItUrl);
   const enqueueToken = urlObj.searchParams.get('enqueuetoken') || '';
   const eventId = urlObj.searchParams.get('e') || '';
@@ -46,7 +46,7 @@ export const runQueueIt = async (
 
   qlog(`  Queue-it: event=${eventId}`, 'info');
 
-  // ─── STEP 2: GET page Queue-it ──────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 2: GET page Queue-it ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   qlog('  [Q1] GET page Queue-it...', 'step');
   const pageRes = await queueClient.get(queueItUrl, {
     headers: {
@@ -67,8 +67,8 @@ export const runQueueIt = async (
   // Extract challengeApiChecksumHash
   const hashMatch = html.match(/challengeApiChecksumHash\s*[=:]\s*["']([^"']+)["']/);
   const challengeHash = hashMatch ? hashMatch[1] : '';
-  if (!challengeHash) qlog('  ⚠ challengeHash introuvable', 'warn');
-  else qlog(`  ✓ hash extrait`, 'success');
+  if (!challengeHash) qlog('  ÔÜá challengeHash introuvable', 'warn');
+  else qlog(`  Ô£ô hash extrait`, 'success');
 
   const queueItBase = `https://${customerId}.queue-it.net`;
 
@@ -87,7 +87,7 @@ export const runQueueIt = async (
     'Cookie': visitorSessionRaw,
   };
 
-  // ─── STEP 3: GET reCAPTCHA challenge ────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 3: GET reCAPTCHA challenge ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   qlog('  [Q2] GET reCAPTCHA challenge...', 'step');
   // Nouvelle URL : /challengeapi/recaptcha/challenge/ (sans customerId/eventId dans le path)
   // Le customerId/eventId sont dans les headers x-queueit-challange-*
@@ -108,12 +108,12 @@ export const runQueueIt = async (
   const rcChallengeDetails = rcChallenge.challengeDetails ?? '';
   const rcSiteKey = rcChallenge.siteKey || '6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV';
 
-  // ─── STEP 4: Résoudre reCAPTCHA v2 ──────────────────────────────────────────
-  qlog('  [Q3] Résolution reCAPTCHA v2 — Capsolver...', 'step');
+  // ÔöÇÔöÇÔöÇ STEP 4: R├®soudre reCAPTCHA v2 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  qlog('  [Q3] R├®solution reCAPTCHA v2 ÔÇö Capsolver...', 'step');
   const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId);
-  qlog('  ✓ reCAPTCHA v2 résolu', 'success');
+  qlog('  Ô£ô reCAPTCHA v2 r├®solu', 'success');
 
-  // ─── STEP 5: Vérifier reCAPTCHA ─────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 5: V├®rifier reCAPTCHA ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   qlog('  [Q4] POST verify reCAPTCHA...', 'step');
   const rcVerifyRes = await queueClient.post(
     `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
@@ -133,12 +133,12 @@ export const runQueueIt = async (
   const rcVerify = rcVerifyRes.data;
   if (rcVerify?.challengeFailed) throw new Error('Queue-it: reCAPTCHA verify failed');
   const recaptchaSessionInfo = rcVerify?.sessionInfo;
-  qlog('  ✓ reCAPTCHA vérifié par Queue-it', 'success');
+  qlog('  Ô£ô reCAPTCHA v├®rifi├® par Queue-it', 'success');
 
-  // ─── STEP 6: GET PoW challenge ───────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 6: GET PoW challenge ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   qlog('  [Q5] GET ProofOfWork challenge...', 'step');
   // Nouvelle URL : /challengeapi/pow/challenge/ sans customerId/eventId dans le path
-  // La réponse contient DIRECTEMENT la fonction JS (plus besoin d'un GET séparé)
+  // La r├®ponse contient DIRECTEMENT la fonction JS (plus besoin d'un GET s├®par├®)
   const powChallengeRes = await queueClient.post(
     `${queueItBase}/challengeapi/pow/challenge/`,
     null,
@@ -149,17 +149,17 @@ export const runQueueIt = async (
   if (!powChallenge?.sessionId) throw new Error(`Queue-it PoW challenge failed: ${JSON.stringify(powChallenge)}`);
   const powChallengeDetails = powChallenge.challengeDetails ?? '';
 
-  // La fonction PoW est directement dans la réponse (champ "function")
+  // La fonction PoW est directement dans la r├®ponse (champ "function")
   const functionBody: string = powChallenge.function ?? '';
-  if (!functionBody) throw new Error('Queue-it: PoW function body vide dans la réponse');
-  qlog('  ✓ PoW challenge reçu', 'success');
+  if (!functionBody) throw new Error('Queue-it: PoW function body vide dans la r├®ponse');
+  qlog('  Ô£ô PoW challenge re├ºu', 'success');
 
-  // ─── STEP 7b: Résoudre PoW localement ────────────────────────────────────────
-  qlog(`  [Q7] Résolution PoW (runs=${powChallenge.runs}, complexity=${powChallenge.complexity})...`, 'step');
+  // ÔöÇÔöÇÔöÇ STEP 7b: R├®soudre PoW localement ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  qlog(`  [Q7] R├®solution PoW (runs=${powChallenge.runs}, complexity=${powChallenge.complexity})...`, 'step');
   const { solutionEncoded, durationMs } = await solvePoW(powChallenge, functionBody);
-  qlog(`  ✓ PoW résolu en ${durationMs}ms`, 'success');
+  qlog(`  Ô£ô PoW r├®solu en ${durationMs}ms`, 'success');
 
-  // ─── STEP 8: Vérifier PoW ────────────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 8: V├®rifier PoW ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   qlog('  [Q8] POST verify PoW...', 'step');
   const powVerifyRes = await queueClient.post(
     `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
@@ -179,10 +179,10 @@ export const runQueueIt = async (
   const powVerify = powVerifyRes.data;
   if (powVerify?.challengeFailed) throw new Error('Queue-it: PoW verify failed');
   const powSessionInfo = powVerify?.sessionInfo;
-  qlog('  ✓ PoW vérifié par Queue-it', 'success');
+  qlog('  Ô£ô PoW v├®rifi├® par Queue-it', 'success');
 
-  // ─── STEP 9: POST enqueue ─────────────────────────────────────────────────────
-  qlog('  [Q9] POST enqueue — entrée dans la file...', 'step');
+  // ÔöÇÔöÇÔöÇ STEP 9: POST enqueue ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  qlog('  [Q9] POST enqueue ÔÇö entr├®e dans la file...', 'step');
   const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
     + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
     + `&t=${encodeURIComponent(targetUrl)}`
@@ -225,9 +225,9 @@ export const runQueueIt = async (
   if (!enqueueData?.queueId) throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueData)}`);
 
   const queueId: string = enqueueData.queueId;
-  qlog(`  ✓ Enqueued! ID=${queueId.slice(0, 8)}... — polling...`, 'success');
+  qlog(`  Ô£ô Enqueued! ID=${queueId.slice(0, 8)}... ÔÇö polling...`, 'success');
 
-  // ─── STEP 10: Polling /status jusqu'à la redirection ─────────────────────────
+  // ÔöÇÔöÇÔöÇ STEP 10: Polling /status jusqu'├á la redirection ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const seid = crypto.randomUUID();
   const sets = Date.now().toString();
   const layoutName = 'Generic TMFR and partners 2024';
@@ -235,10 +235,10 @@ export const runQueueIt = async (
   let queueItemHeader = enqueueRes.headers['x-queueit-queueitem-v2'] || '';
   let pollCount = 0;
   const POLL_INTERVAL_MS = 10000; // 10 secondes entre chaque poll
-  const maxPolls = 6 * 60; // max 1h (6 polls/min × 60 min)
+  const maxPolls = 6 * 60; // max 1h (6 polls/min ├ù 60 min)
 
   while (pollCount < maxPolls) {
-    if (stopSignal?.stopped) throw new Error('Task arrêtée par l\'utilisateur');
+    if (stopSignal?.stopped) throw new Error('Task arr├¬t├®e par l\'utilisateur');
 
     pollCount++;
     await sleep(POLL_INTERVAL_MS);
@@ -294,8 +294,8 @@ export const runQueueIt = async (
 
     if (onUpdate) onUpdate({ queuePosition: String(ahead), forecastStatus: forecast });
 
-    // Log à chaque poll (10s = fréquence raisonnable)
-    qlog(`  ⏳ Position: ${ahead} devant toi${whichIsIn ? ` · ${whichIsIn}` : ''} (${forecast})`, 'queue');
+    // Log ├á chaque poll (10s = fr├®quence raisonnable)
+    qlog(`  ÔÅ│ Position: ${ahead} devant toi${whichIsIn ? ` ┬À ${whichIsIn}` : ''} (${forecast})`, 'queue');
 
     if (d.redirectUrl && d.isRedirectToTarget) {
       const redirectUrl: string = d.redirectUrl;
@@ -308,10 +308,10 @@ export const runQueueIt = async (
       const queueItCookieValue = queueItCookieName ? allCookies[queueItCookieName] : '';
       const queueItCookie = queueItCookieName ? `${queueItCookieName}=${queueItCookieValue}` : '';
 
-      qlog('  🎉 File passée! Redirection reçue', 'success');
+      qlog('  ­ƒÄë File pass├®e! Redirection re├ºue', 'success');
       return { queueItCookie, queueittoken, redirectUrl };
     }
   }
 
-  throw new Error('Queue-it: timeout après 1h de polling');
+  throw new Error('Queue-it: timeout apr├¿s 1h de polling');
 };

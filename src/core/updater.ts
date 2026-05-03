@@ -86,8 +86,6 @@ export const checkForUpdate = async (): Promise<UpdateCheckResult> => {
 
   const remoteVersion = release.tag_name?.replace(/^v/, '') ?? '';
   const hasUpdate = isNewer(remoteVersion, APP_VERSION);
-
-  // Chercher le zip de distribution (Nuxen-X.X.X.zip)
   const asset = release.assets.find(a => a.name.match(/^Nuxen.*\.zip$/i));
 
   return {
@@ -107,62 +105,68 @@ export const downloadAndApplyUpdate = async (
     throw new Error('Aucun asset zip trouve dans la release GitHub');
   }
 
+  // Chemins
   const currentExe = process.execPath;
   const currentDir = path.dirname(currentExe);
-
-  // Zip telecharge dans le dossier temp systeme
-  const tmpZip = path.join(os.tmpdir(), `Nuxen_update_${Date.now()}.zip`);
-  // Dossier d'extraction temporaire
-  const extractDir = path.join(os.tmpdir(), `Nuxen_extract_${Date.now()}`);
-  // Exe "staging" dans le meme dossier que l'exe actuel (nom differents pour contourner le lock Windows)
-  const stagingExe = path.join(currentDir, 'Nuxen_new.exe');
-  // Cible finale
+  const tmpZip = path.join(os.tmpdir(), 'nuxen_update.zip');
+  const extractDir = path.join(os.tmpdir(), 'nuxen_update_extract');
   const finalExe = path.join(currentDir, 'Nuxen.exe');
 
+  // 1. Telecharger le zip
   onProgress?.(`Telechargement v${result.remoteVersion}...`);
   await downloadFile(result.downloadUrl, tmpZip, (pct) => {
     onProgress?.(`Telechargement v${result.remoteVersion}... ${pct}%`);
   });
 
-  onProgress?.('Extraction...');
+  onProgress?.('Preparation du relancement...');
 
-  // Extraire le zip (PowerShell) — fait MAINTENANT pendant que le process tourne encore
-  // On copie le nouvel exe sous le nom Nuxen_new.exe (pas locked)
-  const extractNow = [
-    `Expand-Archive -Path '${tmpZip}' -DestinationPath '${extractDir}' -Force`,
-    `Copy-Item '${extractDir}\\Nuxen.exe' '${stagingExe}' -Force`,
-    `Remove-Item -Recurse -Force '${extractDir}' -ErrorAction SilentlyContinue`,
-    `Remove-Item -Force '${tmpZip}' -ErrorAction SilentlyContinue`,
-  ].join('; ');
-
-  try {
-    const { execSync } = await import('child_process');
-    execSync(`powershell -NoProfile -NonInteractive -Command "${extractNow}"`, { stdio: 'ignore' });
-  } catch { /* ignore — le batch de remplacement gerera l'erreur */ }
-
-  onProgress?.('Relancement en cours...');
-
-  // Batch de remplacement : s'execute APRES process.exit(0)
-  // Il attend que Nuxen.exe soit libere, le remplace par Nuxen_new.exe, puis relance
-  const batchLines = [
-    '@echo off',
-    'ping 127.0.0.1 -n 4 > nul',
-    `if exist "${stagingExe}" (`,
-    `  del /f /q "${finalExe}"`,
-    `  ren "${stagingExe}" "Nuxen.exe"`,
-    `)`,
-    `start "" "${finalExe}"`,
-    'del /f /q "%~f0"',
+  // 2. Ecrire le script PowerShell de remplacement
+  //    Il sera execute APRES process.exit(0), donc Nuxen.exe sera libere
+  const ps1Path = path.join(os.tmpdir(), 'nuxen_update.ps1');
+  const ps1Lines = [
+    `$zip = '${tmpZip}'`,
+    `$extract = '${extractDir}'`,
+    `$final = '${finalExe}'`,
+    '',
+    '# Attendre que Nuxen.exe soit ferme',
+    'Start-Sleep -Seconds 3',
+    '',
+    '# Nettoyer ancien dossier d extraction si besoin',
+    'if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }',
+    '',
+    '# Extraire le zip',
+    'Expand-Archive -Path $zip -DestinationPath $extract -Force',
+    '',
+    '# Remplacer Nuxen.exe',
+    '$newExe = Join-Path $extract "Nuxen.exe"',
+    'if (Test-Path $newExe) {',
+    '  if (Test-Path $final) { Remove-Item $final -Force -ErrorAction SilentlyContinue }',
+    '  Copy-Item $newExe $final -Force',
+    '  Start-Process $final',
+    '}',
+    '',
+    '# Nettoyage',
+    'Remove-Item -Recurse -Force $extract -ErrorAction SilentlyContinue',
+    'Remove-Item -Force $zip -ErrorAction SilentlyContinue',
+    'Remove-Item $PSCommandPath -ErrorAction SilentlyContinue',
   ];
-  const batchPath = path.join(currentDir, '_nuxen_update.bat');
-  fs.writeFileSync(batchPath, batchLines.join('\r\n'));
+  fs.writeFileSync(ps1Path, ps1Lines.join('\r\n'), 'utf8');
 
-  spawn('cmd.exe', ['/c', batchPath], {
+  // 3. Lancer le script PowerShell en tache de fond (detache)
+  spawn('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy', 'Bypass',
+    '-WindowStyle', 'Hidden',
+    '-File', ps1Path,
+  ], {
     detached: true,
     stdio: 'ignore',
-    windowsHide: false, // visible pour debug si ca coince
+    windowsHide: true,
   }).unref();
 
-  await new Promise(r => setTimeout(r, 1000));
+  // 4. Quitter — PowerShell prend le relai
+  onProgress?.('Fermeture...');
+  await new Promise(r => setTimeout(r, 1500));
   process.exit(0);
 };

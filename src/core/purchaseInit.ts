@@ -116,7 +116,7 @@ export const purchaseInit = async (
     seanceUpsellsDtos: [],
   };
 
-  logger.info(taskId, `POST purchase/init idmanif=${idmanif} séance=${place.idseanc} cat=${place.codcatpl}...`);
+  logger.info(taskId, `POST purchase/init idmanif=${idmanif} s├®ance=${place.idseanc} cat=${place.codcatpl}...`);
 
   const res = await client.request({
     method: 'POST',
@@ -126,24 +126,24 @@ export const purchaseInit = async (
     maxRedirects: 0,
   });
 
-  // ─── Queue-it redirect ─────────────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Queue-it redirect ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (res.status === 302 || res.status === 301) {
     const location: string = res.headers['location'] || '';
     if (location.includes('queue-it.net')) {
-      logger.queue(taskId, `Queue-it détecté! Redirection vers: ${location.slice(0, 80)}...`);
+      logger.queue(taskId, `Queue-it d├®tect├®! Redirection vers: ${location.slice(0, 80)}...`);
       return { isQueueIt: true, queueItUrl: location, location };
     }
-    throw new Error(`Redirection inattendue: ${res.status} → ${location}`);
+    throw new Error(`Redirection inattendue: ${res.status} ÔåÆ ${location}`);
   }
 
-  // ─── Success ───────────────────────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Success ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (res.status === 200) {
     const basket = res.data as BasketResult;
     if (!basket?.id) throw new Error(`purchase/init 200 mais pas de basket id: ${JSON.stringify(res.data).slice(0, 300)}`);
-    logger.success(taskId, `Panier créé! id=${basket.id} prix=${basket.price}€`);
+    logger.success(taskId, `Panier cr├®├®! id=${basket.id} prix=${basket.price}Ôé¼`);
     return { basket, isQueueIt: false };
   }
 
-  // ─── Error ────────────────────────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Error ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   throw new Error(`purchase/init ${res.status}: ${JSON.stringify(res.data).slice(0, 300)}`);
 };

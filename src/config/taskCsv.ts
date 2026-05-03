@@ -90,11 +90,11 @@ export const parseTaskCsv = (filePath: string): ParsedTaskFile => {
 
     // Validation: Url et Proxy_File obligatoires
     if (!url) {
-      errors.push({ row: i + 1, message: 'Url vide — tache ignoree' });
+      errors.push({ row: i + 1, message: 'Url vide ÔÇö tache ignoree' });
       continue;
     }
     if (!proxyFile) {
-      errors.push({ row: i + 1, message: 'Proxy_File vide — tache ignoree' });
+      errors.push({ row: i + 1, message: 'Proxy_File vide ÔÇö tache ignoree' });
       continue;
     }
 
@@ -121,7 +121,7 @@ export const parseTaskCsv = (filePath: string): ParsedTaskFile => {
   return { rows, errors };
 };
 
-// Convertit "13/11/2026" → date object pour comparaison avec dateSeance ISO
+// Convertit "13/11/2026" ÔåÆ date object pour comparaison avec dateSeance ISO
 export const parseFrenchDate = (s: string): Date | null => {
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (!m) return null;

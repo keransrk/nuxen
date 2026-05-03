@@ -38,9 +38,9 @@ export const runTask = async (
   };
 
   try {
-    // ─── ÉTAPE 1: Générer les cookies ─────────────────────────────────────────
-    store.updateTask(taskId, { status: 'cookies', statusText: 'Génération cookies...' });
-    log('① Génération cookies — GET /eps-mgr...', 'step');
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 1: G├®n├®rer les cookies ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    store.updateTask(taskId, { status: 'cookies', statusText: 'G├®n├®ration cookies...' });
+    log('Ôæá G├®n├®ration cookies ÔÇö GET /eps-mgr...', 'step');
 
     let cookies: TmCookies;
     try {
@@ -50,9 +50,9 @@ export const runTask = async (
     }
 
     if (cookies.ok) {
-      log('✓ Cookies TM générés (eps_sid · SID · BID · tmpt)', 'success');
+      log('Ô£ô Cookies TM g├®n├®r├®s (eps_sid ┬À SID ┬À BID ┬À tmpt)', 'success');
     } else {
-      log('⚠ Cookies incomplets — certains manquants', 'warn');
+      log('ÔÜá Cookies incomplets ÔÇö certains manquants', 'warn');
     }
 
     if (stopSignal.stopped) return;
@@ -61,9 +61,9 @@ export const runTask = async (
     tmClient.cookieJar.ingestString(cookies.cookieString);
     tmClient.cookieJar.set('tkm_i18n', 'fr');
 
-    // ─── ÉTAPE 2: Vérifier la page événement (Queue-it éventuelle) ────────────
-    store.updateTask(taskId, { status: 'grille', statusText: 'Vérification page événement...' });
-    log('② Vérification page événement (Queue-it?)...', 'step');
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 2: V├®rifier la page ├®v├®nement (Queue-it ├®ventuelle) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    store.updateTask(taskId, { status: 'grille', statusText: 'V├®rification page ├®v├®nement...' });
+    log('Ôæí V├®rification page ├®v├®nement (Queue-it?)...', 'step');
 
     const pageUrl = `https://www.ticketmaster.fr/fr/manifestation/${eventInfo.slug}-billet/idmanif/${eventInfo.idmanif}`;
     let queueItCookie: string | undefined;
@@ -86,17 +86,17 @@ export const runTask = async (
         const location: string = pageRes.headers['location'] || '';
         if (location.includes('queue-it.net')) {
           queueItDetectedUrl = location;
-          log('⏳ Queue-it détecté (redirect 302 sur page événement)', 'queue');
+          log('ÔÅ│ Queue-it d├®tect├® (redirect 302 sur page ├®v├®nement)', 'queue');
         }
       }
 
       // CAS 2 : page 200 mais contient une config Queue-it active (client-side JS)
       if (!queueItDetectedUrl && pageRes.status === 200) {
         const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
-        // Queue-it actif côté client si la config contient des intégrations non vides
-        // ou si la page est déjà la waiting room Queue-it
+        // Queue-it actif c├┤t├® client si la config contient des int├®grations non vides
+        // ou si la page est d├®j├á la waiting room Queue-it
         const isQueueItPage = html.includes('queue-it.net') && (
-          html.includes('"integrations":[{') ||     // intégrations actives
+          html.includes('"integrations":[{') ||     // int├®grations actives
           html.includes('data-pageid="queue"') ||   // waiting room Queue-it
           html.includes('data-pageid="before"')     // before queue
         );
@@ -112,9 +112,9 @@ export const runTask = async (
             const eid = eventMatch[1];
             const t = targetMatch ? targetMatch[1] : encodeURIComponent(pageUrl);
             queueItDetectedUrl = `https://${cid}.queue-it.net/?c=${cid}&e=${eid}&t=${t}`;
-            log(`⏳ Queue-it détecté (HTML client-side, event=${eid})`, 'queue');
+            log(`ÔÅ│ Queue-it d├®tect├® (HTML client-side, event=${eid})`, 'queue');
           } else {
-            log('⏳ Queue-it probable (scripts détectés) — attente purchase/init', 'warn');
+            log('ÔÅ│ Queue-it probable (scripts d├®tect├®s) ÔÇö attente purchase/init', 'warn');
           }
         }
       }
@@ -133,7 +133,7 @@ export const runTask = async (
                 forecastStatus: forecast,
                 statusText: `File: ${pos} devant`,
               });
-              if (forecast === 'FirstInLine') log('🏁 Premier dans la file!', 'queue');
+              if (forecast === 'FirstInLine') log('­ƒÅü Premier dans la file!', 'queue');
             },
             stopSignal
           );
@@ -143,24 +143,24 @@ export const runTask = async (
         if (stopSignal.stopped) return;
         queueItCookie = queueResult.queueItCookie;
         if (queueItCookie) tmClient.cookieJar.ingestString(queueItCookie);
-        log('✓ File passée! Accès accordé', 'success');
+        log('Ô£ô File pass├®e! Acc├¿s accord├®', 'success');
       } else if (pageRes.status === 200) {
-        log('✓ Page événement OK — pas de Queue-it', 'success');
+        log('Ô£ô Page ├®v├®nement OK ÔÇö pas de Queue-it', 'success');
       }
     } catch (e: any) {
-      // Si 200 ou erreur réseau non-bloquante, on continue
+      // Si 200 ou erreur r├®seau non-bloquante, on continue
       if (!String(e.message).includes('Queue-it')) {
-        log(`⚠ Vérif. page: ${e.message} — on continue`, 'warn');
+        log(`ÔÜá V├®rif. page: ${e.message} ÔÇö on continue`, 'warn');
       } else {
-        return fail(`Page événement: ${e.message}`);
+        return fail(`Page ├®v├®nement: ${e.message}`);
       }
     }
 
     if (stopSignal.stopped) return;
 
-    // ─── ÉTAPE 3: Charger la grille tarifaire ────────────────────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 3: Charger la grille tarifaire ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     store.updateTask(taskId, { status: 'grille', statusText: 'Chargement grille tarifaire...' });
-    log('③ Chargement grille tarifaire...', 'step');
+    log('Ôæó Chargement grille tarifaire...', 'step');
 
     let seances: any[];
     try {
@@ -171,7 +171,7 @@ export const runTask = async (
 
     if (stopSignal.stopped) return;
 
-    // ─── ÉTAPE 4: Sélection random de place ──────────────────────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 4: S├®lection random de place ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     let place: any;
     try {
       place = pickRandomPlace(seances, taskId, {
@@ -183,30 +183,30 @@ export const runTask = async (
         dates: row.dates,
       });
     } catch (e: any) {
-      return fail(`Sélection place: ${e.message}`);
+      return fail(`S├®lection place: ${e.message}`);
     }
 
-    log(`✓ Séance ${place.idseanc} — ${place.llgcatpl} — ${place.qty}× ${place.price}€`, 'success');
-    store.updateTask(taskId, { statusText: `${place.llgcatpl} · ${place.qty}× ${place.price}€` });
+    log(`Ô£ô S├®ance ${place.idseanc} ÔÇö ${place.llgcatpl} ÔÇö ${place.qty}├ù ${place.price}Ôé¼`, 'success');
+    store.updateTask(taskId, { statusText: `${place.llgcatpl} ┬À ${place.qty}├ù ${place.price}Ôé¼` });
 
     if (stopSignal.stopped) return;
 
-    // ─── ÉTAPE 5: Résoudre reCAPTCHA invisible ────────────────────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 5: R├®soudre reCAPTCHA invisible ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     store.updateTask(taskId, { status: 'recaptcha', statusText: 'reCAPTCHA invisible...' });
-    log('④ reCAPTCHA invisible — Capsolver (avec proxy)...', 'step');
+    log('Ôæú reCAPTCHA invisible ÔÇö Capsolver (avec proxy)...', 'step');
     let recaptchaToken: string;
     try {
       recaptchaToken = await solveRecaptchaInvisible(config.capsolver_api_key, taskId, proxyUrl);
     } catch (e: any) {
       return fail(`reCAPTCHA: ${e.message}`);
     }
-    log('✓ reCAPTCHA invisible résolu', 'success');
+    log('Ô£ô reCAPTCHA invisible r├®solu', 'success');
 
     if (stopSignal.stopped) return;
 
-    // ─── ÉTAPE 6: Purchase init ────────────────────────────────────────────────
-    store.updateTask(taskId, { status: 'purchase', statusText: 'Création du panier...' });
-    log('⑤ POST /api/purchase/init...', 'step');
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 6: Purchase init ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    store.updateTask(taskId, { status: 'purchase', statusText: 'Cr├®ation du panier...' });
+    log('Ôæñ POST /api/purchase/init...', 'step');
 
     let purchaseResult: any;
     try {
@@ -219,10 +219,10 @@ export const runTask = async (
       return fail(`Purchase init: ${e.message}`);
     }
 
-    // ─── ÉTAPE 7: Si Queue-it détecté à purchase (fallback) ───────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 7: Si Queue-it d├®tect├® ├á purchase (fallback) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     if (purchaseResult.isQueueIt) {
       store.updateTask(taskId, { status: 'queued', statusText: 'File Queue-it (purchase)...', queuePosition: '?' });
-      log('⏳ Queue-it détecté sur purchase/init — bypass...', 'queue');
+      log('ÔÅ│ Queue-it d├®tect├® sur purchase/init ÔÇö bypass...', 'queue');
 
       let queueResult: any;
       try {
@@ -236,7 +236,7 @@ export const runTask = async (
               forecastStatus: forecast,
               statusText: `File: ${pos} devant`,
             });
-            if (forecast === 'FirstInLine') log('🏁 Premier dans la file!', 'queue');
+            if (forecast === 'FirstInLine') log('­ƒÅü Premier dans la file!', 'queue');
           },
           stopSignal
         );
@@ -247,18 +247,18 @@ export const runTask = async (
       if (stopSignal.stopped) return;
 
       queueItCookie = queueResult.queueItCookie;
-      log('✓ File passée! 2ème tentative purchase/init...', 'success');
+      log('Ô£ô File pass├®e! 2├¿me tentative purchase/init...', 'success');
       store.updateTask(taskId, { status: 'purchase', statusText: 'Panier (post-queue)...' });
 
-      log('⑥ reCAPTCHA invisible (post-queue)...', 'step');
+      log('ÔæÑ reCAPTCHA invisible (post-queue)...', 'step');
       try {
         recaptchaToken = await solveRecaptchaInvisible(config.capsolver_api_key, taskId, proxyUrl);
       } catch (e: any) {
         return fail(`reCAPTCHA post-queue: ${e.message}`);
       }
-      log('✓ reCAPTCHA résolu', 'success');
+      log('Ô£ô reCAPTCHA r├®solu', 'success');
 
-      log('⑦ POST /api/purchase/init (post-queue)...', 'step');
+      log('Ôæª POST /api/purchase/init (post-queue)...', 'step');
       try {
         purchaseResult = await purchaseInit(
           tmClient, eventInfo.idmanif, eventInfo.slug,
@@ -269,29 +269,29 @@ export const runTask = async (
         return fail(`Purchase post-queue: ${e.message}`);
       }
 
-      if (purchaseResult.isQueueIt) return fail('Queue-it re-détecté — abandon');
+      if (purchaseResult.isQueueIt) return fail('Queue-it re-d├®tect├® ÔÇö abandon');
     }
 
-    // ─── ÉTAPE 7bis: Verification contiguite ──────────────────────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 7bis: Verification contiguite ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     const basket = purchaseResult.basket;
     const firstItem = basket.items?.[0];
     const isContiguous = !firstItem?.warningNoContiguousTickets;
 
     if (row.acceptContiguous && !isContiguous) {
-      return fail('Places non contiguës rejetées (Accept_Contigous=true)');
+      return fail('Places non contigu├½s rejet├®es (Accept_Contigous=true)');
     }
 
-    // ─── ÉTAPE 7: Succès ───────────────────────────────────────────────────────
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 7: Succ├¿s ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     const sub = basket.items?.[0]?.subEventBasketDto?.[0];
     const tickets = sub?.tickets ?? [];
-    const seatsStr = tickets.map((t: any) => `${t.llgzone} R${t.rgplac} S${t.numplac}`).join(' · ') || 'Automatique';
+    const seatsStr = tickets.map((t: any) => `${t.llgzone} R${t.rgplac} S${t.numplac}`).join(' ┬À ') || 'Automatique';
 
-    log(`✓ PANIER CRÉÉ! ID #${basket.id} — ${basket.price}€${isContiguous ? ' · contigu' : ' · non-contigu'}`, 'success');
-    log(`  ${sub?.llgcatpl ?? place.llgcatpl} · ${seatsStr}`, 'success');
+    log(`Ô£ô PANIER CR├ë├ë! ID #${basket.id} ÔÇö ${basket.price}Ôé¼${isContiguous ? ' ┬À contigu' : ' ┬À non-contigu'}`, 'success');
+    log(`  ${sub?.llgcatpl ?? place.llgcatpl} ┬À ${seatsStr}`, 'success');
 
     store.updateTask(taskId, {
       status: 'success',
-      statusText: `#${basket.id} — ${basket.price}€`,
+      statusText: `#${basket.id} ÔÇö ${basket.price}Ôé¼`,
       basketId: basket.id,
       price: basket.price,
       category: sub?.llgcatpl ?? place.llgcatpl,
@@ -299,19 +299,19 @@ export const runTask = async (
       completedAt: new Date(),
     });
 
-    // ─── ÉTAPE 8: Session tm.sdss.fr ──────────────────────────────────────────
-    log('⑦ Envoi session tm.sdss.fr...', 'step');
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 8: Session tm.sdss.fr ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    log('Ôæª Envoi session tm.sdss.fr...', 'step');
     let sessionUrl = `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
     try {
       const sessionResult = await sendSession(basket, cookies, eventInfo, taskId);
       sessionUrl = sessionResult.sessionUrl;
-      log(`✓ Session URL: ${sessionUrl.slice(0, 60)}`, 'success');
+      log(`Ô£ô Session URL: ${sessionUrl.slice(0, 60)}`, 'success');
     } catch (e: any) {
-      log(`⚠ Session: ${e.message} — fallback basket URL`, 'warn');
+      log(`ÔÜá Session: ${e.message} ÔÇö fallback basket URL`, 'warn');
     }
 
-    // ─── ÉTAPE 9: Notification Discord ────────────────────────────────────────
-    log('⑧ Envoi notification Discord...', 'step');
+    // ÔöÇÔöÇÔöÇ ├ëTAPE 9: Notification Discord ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    log('Ôæº Envoi notification Discord...', 'step');
     const webhookUrl = row.webhook || config.default_webhook_url;
     try {
       await sendDiscordNotification(
@@ -322,9 +322,9 @@ export const runTask = async (
         place.dateSeance,
         isContiguous,
       );
-      log('✓ Notification Discord envoyée', 'success');
+      log('Ô£ô Notification Discord envoy├®e', 'success');
     } catch (e: any) {
-      log(`⚠ Discord: ${e.message}`, 'warn');
+      log(`ÔÜá Discord: ${e.message}`, 'warn');
     }
 
   } catch (err: any) {

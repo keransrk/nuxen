@@ -34,7 +34,7 @@ export const startFromRows = (
     let eventInfo: ReturnType<typeof resolveEventUrl>;
     try { eventInfo = resolveEventUrl(row.url); }
     catch (e: any) {
-      errors.push(`Row ${row.rowIndex}: URL invalide — ${e.message}`);
+      errors.push(`Row ${row.rowIndex}: URL invalide ÔÇö ${e.message}`);
       continue;
     }
 
@@ -98,7 +98,7 @@ export const stopAll = () => {
   }
   for (const task of store.state.tasks) {
     if (!['success', 'error', 'stopped'].includes(task.status)) {
-      store.updateTask(task.id, { status: 'stopped', statusText: 'Arrêté', completedAt: new Date() });
+      store.updateTask(task.id, { status: 'stopped', statusText: 'Arr├¬t├®', completedAt: new Date() });
     }
   }
   store.setRunning(false);

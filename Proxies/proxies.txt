@@ -1,0 +1,4 @@
+# Un proxy par ligne (format: user:pass@host:port)
+# NE PAS mettre http:// devant - c'est ajoute automatiquement
+10028496:HTC0V7oRwHA67_country-FRANCE_session-11111111@proxy-eu.packetstream.vip:31112
+10028496:HTC0V7oRwHA67_country-FRANCE_session-22222222@proxy-eu.packetstream.vip:31112

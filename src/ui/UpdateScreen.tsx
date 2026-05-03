@@ -22,12 +22,12 @@ export const UpdateScreen: React.FC<UpdateScreenProps> = ({ result, onDownload, 
 
   return (
     <Box flexDirection="column" padding={2} gap={1}>
-      <Text bold color="#7C3AED">NUXEN — Mise à jour</Text>
+      <Text bold color="#7C3AED">NUXEN ÔÇö Mise ├á jour</Text>
 
       <Box gap={2}>
         <Text color="#6B7280">Version actuelle :</Text>
         <Text color="#EF4444">v{APP_VERSION}</Text>
-        <Text color="#6B7280">→</Text>
+        <Text color="#6B7280">ÔåÆ</Text>
         <Text color="#22C55E" bold>v{result.remoteVersion}</Text>
       </Box>
 
@@ -40,13 +40,13 @@ export const UpdateScreen: React.FC<UpdateScreenProps> = ({ result, onDownload, 
 
       {!error ? (
         <Box marginTop={1} gap={1}>
-          <Text color="#38BDF8">⟳</Text>
+          <Text color="#38BDF8">Ôƒ│</Text>
           <Text color="#D1D5DB">{progress}</Text>
         </Box>
       ) : (
         <Box marginTop={1} flexDirection="column">
-          <Text color="#EF4444">⚠ {error}</Text>
-          <Text color="#6B7280">Lancement sans mise à jour dans 3s...</Text>
+          <Text color="#EF4444">ÔÜá {error}</Text>
+          <Text color="#6B7280">Lancement sans mise ├á jour dans 3s...</Text>
         </Box>
       )}
     </Box>

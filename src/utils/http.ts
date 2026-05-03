@@ -95,5 +95,5 @@ export class HttpClient {
   }
 }
 
-// Direct (no proxy) client — for Capsolver
+// Direct (no proxy) client ÔÇö for Capsolver
 export const directClient = new HttpClient({ delayMs: 0 });

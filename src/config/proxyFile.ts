@@ -33,7 +33,7 @@ export const loadProxyFile = (filename: string): ProxyEntry[] => {
 
     // Extraction du label (session ID ou suffixe)
     const sessionMatch = line.match(/session-(\d+)/);
-    const label = sessionMatch ? `…${sessionMatch[1].slice(-6)}` : line.slice(-12);
+    const label = sessionMatch ? `ÔÇª${sessionMatch[1].slice(-6)}` : line.slice(-12);
 
     proxies.push({ url, label });
   }

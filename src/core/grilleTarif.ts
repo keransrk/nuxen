@@ -100,7 +100,7 @@ export const getGrilleTarifaire = async (
   if (res.status !== 200) throw new Error(`grille-tarifaire ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
 
   const seances: Seance[] = Array.isArray(res.data) ? res.data : [];
-  logger.info(taskId, `${seances.length} séance(s) récupérée(s)`);
+  logger.info(taskId, `${seances.length} s├®ance(s) r├®cup├®r├®e(s)`);
   return seances;
 };
 
@@ -126,11 +126,11 @@ export const pickRandomPlace = (
     const { matchesDateFilter } = require('../config/taskCsv.js') as typeof import('../config/taskCsv.js');
     available = available.filter(s => matchesDateFilter(s.dateSeance, filters.dates!));
     if (available.length === 0) {
-      throw new Error(`Aucune séance disponible pour les dates: ${filters.dates.join(', ')}`);
+      throw new Error(`Aucune s├®ance disponible pour les dates: ${filters.dates.join(', ')}`);
     }
   }
 
-  if (available.length === 0) throw new Error('Aucune séance disponible (hasPlacesDispo = false ou complet)');
+  if (available.length === 0) throw new Error('Aucune s├®ance disponible (hasPlacesDispo = false ou complet)');
 
   const seance = pickRandom(available);
 
@@ -148,7 +148,7 @@ export const pickRandomPlace = (
       c.llcCatPl?.toLowerCase().includes(sec)
     );
     if (filtered.length === 0) {
-      throw new Error(`Section "${filters.section}" introuvable dans cette séance`);
+      throw new Error(`Section "${filters.section}" introuvable dans cette s├®ance`);
     }
     cats = filtered;
   }
@@ -162,12 +162,12 @@ export const pickRandomPlace = (
       return true;
     });
     if (filtered.length === 0) {
-      throw new Error(`Aucune catégorie dans la fourchette de prix [${filters.priceMin ?? '−∞'}€ — ${filters.priceMax ?? '+∞'}€]`);
+      throw new Error(`Aucune cat├®gorie dans la fourchette de prix [${filters.priceMin ?? 'ÔêÆÔê×'}Ôé¼ ÔÇö ${filters.priceMax ?? '+Ôê×'}Ôé¼]`);
     }
     cats = filtered;
   }
 
-  if (cats.length === 0) throw new Error('Aucune catégorie avec des places disponibles');
+  if (cats.length === 0) throw new Error('Aucune cat├®gorie avec des places disponibles');
 
   const cat = pickRandom(cats);
 
@@ -178,7 +178,7 @@ export const pickRandomPlace = (
   if (!tarif) throw new Error(`Aucun tarif disponible dans ${cat.llgCatPl}`);
 
   // Quantites: respecter les limites du tarif + filtres CSV
-  // Si CSV vide → fenetre random au-dessus/dessous de l'autre
+  // Si CSV vide ÔåÆ fenetre random au-dessus/dessous de l'autre
   let qMin = filters.quantityMin ?? null;
   let qMax = filters.quantityMax ?? null;
   if (qMin == null && qMax != null) qMin = Math.max(tarif.min, 1);
@@ -191,7 +191,7 @@ export const pickRandomPlace = (
 
   logger.info(
     taskId,
-    `Sélection: séance ${seance.idseanc} | cat ${cat.llgCatPl} | ${qty}x ${tarif.nameNatCl} à ${tarif.price}€`
+    `S├®lection: s├®ance ${seance.idseanc} | cat ${cat.llgCatPl} | ${qty}x ${tarif.nameNatCl} ├á ${tarif.price}Ôé¼`
   );
 
   return {

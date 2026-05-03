@@ -4,12 +4,12 @@ import { logger } from '../utils/logger.js';
 
 const CAPSOLVER_URL = 'https://api.capsolver.com';
 
-// reCAPTCHA v3 — pour génération des cookies TM (FREvent)
+// reCAPTCHA v3 ÔÇö pour g├®n├®ration des cookies TM (FREvent)
 export const solveRecaptchaV3 = async (
   capsolverKey: string,
   taskId: number
 ): Promise<string> => {
-  logger.info(taskId, 'reCAPTCHA v3 — Création tâche Capsolver...');
+  logger.info(taskId, 'reCAPTCHA v3 ÔÇö Cr├®ation t├óche Capsolver...');
 
   const createRes = await directClient.post(`${CAPSOLVER_URL}/createTask`, {
     clientKey: capsolverKey,
@@ -25,7 +25,7 @@ export const solveRecaptchaV3 = async (
   const taskIdCapsolver: string = createRes.data?.taskId;
   if (!taskIdCapsolver) throw new Error(`Capsolver v3 createTask failed: ${JSON.stringify(createRes.data)}`);
 
-  logger.info(taskId, `reCAPTCHA v3 — task ${taskIdCapsolver} créée, polling...`);
+  logger.info(taskId, `reCAPTCHA v3 ÔÇö task ${taskIdCapsolver} cr├®├®e, polling...`);
 
   for (let attempt = 0; attempt < 30; attempt++) {
     await sleep(attempt === 0 ? 2000 : 3000);
@@ -37,7 +37,7 @@ export const solveRecaptchaV3 = async (
     if (res.data?.status === 'ready') {
       const token: string = res.data.solution?.gRecaptchaResponse;
       if (!token) throw new Error('Capsolver v3: solution vide');
-      logger.success(taskId, 'reCAPTCHA v3 résolu');
+      logger.success(taskId, 'reCAPTCHA v3 r├®solu');
       return token;
     }
     if (res.data?.status === 'failed') {
@@ -47,14 +47,14 @@ export const solveRecaptchaV3 = async (
   throw new Error('Capsolver v3 timeout (90s)');
 };
 
-// reCAPTCHA v2 — pour Queue-it challenge
+// reCAPTCHA v2 ÔÇö pour Queue-it challenge
 export const solveRecaptchaV2 = async (
   capsolverKey: string,
   siteKey: string,
   websiteURL: string,
   taskId: number
 ): Promise<string> => {
-  logger.info(taskId, `reCAPTCHA v2 — Capsolver (siteKey: ${siteKey.slice(0, 20)}...)`);
+  logger.info(taskId, `reCAPTCHA v2 ÔÇö Capsolver (siteKey: ${siteKey.slice(0, 20)}...)`);
 
   const createRes = await directClient.post(`${CAPSOLVER_URL}/createTask`, {
     clientKey: capsolverKey,
@@ -68,7 +68,7 @@ export const solveRecaptchaV2 = async (
   const taskIdCapsolver: string = createRes.data?.taskId;
   if (!taskIdCapsolver) throw new Error(`Capsolver v2 createTask failed: ${JSON.stringify(createRes.data)}`);
 
-  logger.info(taskId, `reCAPTCHA v2 — task ${taskIdCapsolver} créée, polling...`);
+  logger.info(taskId, `reCAPTCHA v2 ÔÇö task ${taskIdCapsolver} cr├®├®e, polling...`);
 
   for (let attempt = 0; attempt < 25; attempt++) {
     await sleep(4000);
@@ -80,7 +80,7 @@ export const solveRecaptchaV2 = async (
     if (res.data?.status === 'ready') {
       const token: string = res.data.solution?.gRecaptchaResponse;
       if (!token) throw new Error('Capsolver v2: solution vide');
-      logger.success(taskId, 'reCAPTCHA v2 résolu');
+      logger.success(taskId, 'reCAPTCHA v2 r├®solu');
       return token;
     }
     if (res.data?.status === 'failed') {
@@ -90,21 +90,21 @@ export const solveRecaptchaV2 = async (
   throw new Error('Capsolver v2 timeout (100s)');
 };
 
-// reCAPTCHA invisible — pour purchase/init TM
-// IMPORTANT: le proxy est obligatoire pour que l'IP du token corresponde à l'IP de la requête
+// reCAPTCHA invisible ÔÇö pour purchase/init TM
+// IMPORTANT: le proxy est obligatoire pour que l'IP du token corresponde ├á l'IP de la requ├¬te
 export const solveRecaptchaInvisible = async (
   capsolverKey: string,
   taskId: number,
   proxyUrl?: string
 ): Promise<string> => {
-  logger.info(taskId, 'reCAPTCHA invisible — Capsolver (purchase/init)...');
+  logger.info(taskId, 'reCAPTCHA invisible ÔÇö Capsolver (purchase/init)...');
 
   let taskPayload: Record<string, any>;
 
   if (proxyUrl) {
     try {
       const u = new URL(proxyUrl);
-      // Enterprise + proxy pour correspondre à l'IP de la requête TM
+      // Enterprise + proxy pour correspondre ├á l'IP de la requ├¬te TM
       taskPayload = {
         type: 'ReCaptchaV2EnterpriseTask',
         websiteURL: 'https://www.ticketmaster.fr',
@@ -116,9 +116,9 @@ export const solveRecaptchaInvisible = async (
         proxyLogin: decodeURIComponent(u.username),
         proxyPassword: decodeURIComponent(u.password),
       };
-      logger.info(taskId, `reCAPTCHA invisible Enterprise — proxy ${u.hostname}:${u.port}`);
+      logger.info(taskId, `reCAPTCHA invisible Enterprise ÔÇö proxy ${u.hostname}:${u.port}`);
     } catch {
-      logger.warn(taskId, 'reCAPTCHA invisible — proxy URL invalide, fallback proxyless');
+      logger.warn(taskId, 'reCAPTCHA invisible ÔÇö proxy URL invalide, fallback proxyless');
       taskPayload = {
         type: 'ReCaptchaV2EnterpriseTaskProxyless',
         websiteURL: 'https://www.ticketmaster.fr',
@@ -153,7 +153,7 @@ export const solveRecaptchaInvisible = async (
     if (res.data?.status === 'ready') {
       const token: string = res.data.solution?.gRecaptchaResponse;
       if (!token) throw new Error('Capsolver invisible: solution vide');
-      logger.success(taskId, 'reCAPTCHA invisible résolu');
+      logger.success(taskId, 'reCAPTCHA invisible r├®solu');
       return token;
     }
     if (res.data?.status === 'failed') throw new Error(`Capsolver invisible failed: ${res.data.errorDescription ?? ''}`);

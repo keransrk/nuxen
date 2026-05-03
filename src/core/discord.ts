@@ -44,48 +44,48 @@ export const sendDiscordNotification = async (
   const item = basket.items?.[0];
   const sub = item?.subEventBasketDto?.[0];
   const tickets = sub?.tickets ?? [];
-  const title = item?.title ?? 'Événement';
+  const title = item?.title ?? '├ëv├®nement';
 
   // Places description
   const placesDesc = tickets.length > 0
-    ? tickets.map(t => `**${t.llgzone}** — Rang ${t.rgplac} Siège ${t.numplac} (${t.llcsect})`).join('\n')
-    : 'Non numéroté / automatique';
+    ? tickets.map(t => `**${t.llgzone}** ÔÇö Rang ${t.rgplac} Si├¿ge ${t.numplac} (${t.llcsect})`).join('\n')
+    : 'Non num├®rot├® / automatique';
 
-  // Date de l'événement (startDate du basket ou dateSeance de la grille tarifaire)
+  // Date de l'├®v├®nement (startDate du basket ou dateSeance de la grille tarifaire)
   const eventDateIso = item?.startDate || seanceDateIso || null;
   const eventDateStr = formatDate(eventDateIso);
 
-  // Expiration du panier (TM = 8 minutes après création)
+  // Expiration du panier (TM = 8 minutes apr├¿s cr├®ation)
   const cartCreatedAt = new Date(basket.date);
   const expiresAt = basket.expirationDate
     ? new Date(basket.expirationDate)
     : new Date(cartCreatedAt.getTime() + 8 * 60 * 1000);
   const expiresStr = formatTime(expiresAt.toISOString());
 
-  // Contiguë (override par parametre, sinon depuis basket)
+  // Contigu├½ (override par parametre, sinon depuis basket)
   const contiguousFlag = isContiguous ?? !item?.warningNoContiguousTickets;
-  const contiguous = contiguousFlag ? '✓ Contiguës' : '⚠ Non contiguës';
+  const contiguous = contiguousFlag ? 'Ô£ô Contigu├½s' : 'ÔÜá Non contigu├½s';
 
   const openUrl = sessionUrl || `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
   const ping = userIdToPing ? `<@${userIdToPing}> ` : '';
-  const content = `${ping}🎟️ **PANIER CRÉÉ — ${title}**\n🔗 **${openUrl}**`;
+  const content = `${ping}­ƒÄƒ´©Å **PANIER CR├ë├ë ÔÇö ${title}**\n­ƒöù **${openUrl}**`;
 
   const embed = {
-    title: `✅ Panier #${basket.id} — ${basket.price}€`,
+    title: `Ô£à Panier #${basket.id} ÔÇö ${basket.price}Ôé¼`,
     color: NUXEN_COLOR,
-    description: `[👉 Ouvrir le panier (expire à ${expiresStr})](${openUrl})`,
+    description: `[­ƒæë Ouvrir le panier (expire ├á ${expiresStr})](${openUrl})`,
     fields: [
-      { name: '🎵 Artiste', value: title, inline: true },
-      { name: '🌐 Proxy', value: proxyLabel, inline: true },
-      { name: '💶 Prix total', value: `**${basket.price}€**`, inline: true },
-      { name: '📅 Date événement', value: eventDateStr, inline: false },
-      { name: '⏰ Expiration panier', value: expiresStr, inline: true },
-      { name: '🎟️ Catégorie', value: sub?.llgcatpl ?? 'N/A', inline: true },
-      { name: '🔢 Quantité', value: String(tickets.length || 1), inline: true },
-      { name: '🪑 Places', value: placesDesc, inline: false },
-      { name: '🔗 Contiguës', value: contiguous, inline: true },
-      { name: '🆔 Basket ID', value: String(basket.id), inline: true },
-      { name: '🔗 URL Panier', value: openUrl, inline: false },
+      { name: '­ƒÄÁ Artiste', value: title, inline: true },
+      { name: '­ƒîÉ Proxy', value: proxyLabel, inline: true },
+      { name: '­ƒÆÂ Prix total', value: `**${basket.price}Ôé¼**`, inline: true },
+      { name: '­ƒôà Date ├®v├®nement', value: eventDateStr, inline: false },
+      { name: 'ÔÅ░ Expiration panier', value: expiresStr, inline: true },
+      { name: '­ƒÄƒ´©Å Cat├®gorie', value: sub?.llgcatpl ?? 'N/A', inline: true },
+      { name: '­ƒöó Quantit├®', value: String(tickets.length || 1), inline: true },
+      { name: '­ƒ¬æ Places', value: placesDesc, inline: false },
+      { name: '­ƒöù Contigu├½s', value: contiguous, inline: true },
+      { name: '­ƒåö Basket ID', value: String(basket.id), inline: true },
+      { name: '­ƒöù URL Panier', value: openUrl, inline: false },
     ],
     timestamp: new Date().toISOString(),
     footer: { text: 'NUXEN Bot' },

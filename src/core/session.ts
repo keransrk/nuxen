@@ -130,7 +130,7 @@ export const sendSession = async (
 
   let sessionUrl = '';
   if (res.status === 200 || res.status === 201) {
-    // La réponse peut être une URL directe ou un objet { url, id, ... }
+    // La r├®ponse peut ├¬tre une URL directe ou un objet { url, id, ... }
     if (typeof res.data === 'string' && res.data.startsWith('http')) {
       sessionUrl = res.data;
     } else if (typeof res.data === 'object') {
@@ -147,7 +147,7 @@ export const sendSession = async (
     logger.warn(taskId, `tm.sdss.fr/session status=${res.status}, fallback basket URL`);
     sessionUrl = `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
   } else {
-    logger.success(taskId, `Session créée: ${sessionUrl}`);
+    logger.success(taskId, `Session cr├®├®e: ${sessionUrl}`);
   }
 
   const basketUrl = `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;

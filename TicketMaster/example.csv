@@ -1,0 +1,3 @@
+Mode,Url,Price_min,Price_max,Quantity_min,Quantity_max,Proxy_File,Accept_Contigous,Section,Offer_Code,Dates,Webhook
+Drop,https://www.ticketmaster.fr/fr/manifestation/jul-billet/idmanif/640199,30,300,2,3,proxies.txt,true,406,,13/11/2026,
+Drop,,,,,,proxies.txt,true,,,,
