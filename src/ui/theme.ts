@@ -28,15 +28,15 @@ export const statusColor = (status: TaskStatus): chalk.Chalk => {
 
 export const statusIcon = (status: TaskStatus): string => {
   switch (status) {
-    case 'idle':     return '○';
-    case 'cookies':  return '◐';
-    case 'grille':   return '◑';
-    case 'recaptcha':return '◑';
-    case 'purchase': return '◕';
-    case 'queued':   return '⏳';
-    case 'success':  return '✓';
-    case 'error':    return '✗';
-    case 'stopped':  return '□';
+    case 'idle':     return '[ ]';
+    case 'cookies':  return '[~]';
+    case 'grille':   return '[~]';
+    case 'recaptcha':return '[~]';
+    case 'purchase': return '[~]';
+    case 'queued':   return '[Q]';
+    case 'success':  return '[OK]';
+    case 'error':    return '[X]';
+    case 'stopped':  return '[S]';
   }
 };
 
@@ -48,9 +48,9 @@ export const statusLabel = (status: TaskStatus): string => {
     case 'recaptcha':return 'reCAPTCHA';
     case 'purchase': return 'Panier';
     case 'queued':   return 'File';
-    case 'success':  return 'Succès';
+    case 'success':  return 'Succes';
     case 'error':    return 'Erreur';
-    case 'stopped':  return 'Arrêté';
+    case 'stopped':  return 'Arrete';
   }
 };
 

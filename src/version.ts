@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.2.5';
+export const APP_VERSION = '1.2.6';
 
 // ⚠ Remplace par ton repo GitHub : "ton-username/nuxen" (ou "org/nuxen")
 // Le repo doit avoir des Releases avec un asset "NUXEN.exe"

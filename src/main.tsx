@@ -75,8 +75,8 @@ const LicenseInvalidScreen: React.FC<{ reason: string }> = ({ reason }) => {
       <Text color="#EF4444" bold>  Licence invalide</Text>
       <Text color="#F87171">  {reason}</Text>
       <Box marginTop={1} flexDirection="column">
-        <Text color="#9CA3AF">Pour obtenir une clé de licence, contacte l'admin.</Text>
-        <Text color="#9CA3AF">Édite ensuite license_key dans config.json puis relance.</Text>
+        <Text color="#9CA3AF">Pour obtenir une cle de licence, contacte l'admin.</Text>
+        <Text color="#9CA3AF">Edite ensuite license_key dans config.json puis relance.</Text>
       </Box>
       <Box marginTop={1}>
         <Text color="#6B7280">Appuie sur n'importe quelle touche pour quitter.</Text>
@@ -144,8 +144,8 @@ const Root: React.FC = () => {
   if (state.phase === 'checkingUpdate') {
     return (
       <Box padding={1} gap={1}>
-        <Text color="#6B7280">⟳</Text>
-        <Text color="#4B5563">Vérification des mises à jour</Text>
+        <Text color="#6B7280">...</Text>
+        <Text color="#4B5563">Verification des mises a jour</Text>
         <Text color="#374151">(v{APP_VERSION})</Text>
       </Box>
     );
@@ -156,17 +156,17 @@ const Root: React.FC = () => {
     return (
       <Box flexDirection="column" padding={2} gap={1}>
         <Text>{nuxenGradient('NUXEN')}</Text>
-        <Text color="#7C3AED" bold>  Mise à jour automatique</Text>
+        <Text color="#7C3AED" bold>Mise a jour automatique</Text>
         <Box gap={2} marginTop={1}>
           <Text color="#6B7280">v{state.result.currentVersion}</Text>
-          <Text color="#6B7280">→</Text>
+          <Text color="#6B7280">-{'>'}</Text>
           <Text color="#22C55E" bold>v{state.result.remoteVersion}</Text>
         </Box>
         <Box marginTop={1} gap={1}>
-          <Text color="#38BDF8">↓</Text>
+          <Text color="#38BDF8">v</Text>
           <Text color="#D1D5DB">{state.progress}</Text>
         </Box>
-        <Text color="#6B7280">Relancement automatique à la fin...</Text>
+        <Text color="#6B7280">Relancement automatique a la fin...</Text>
       </Box>
     );
   }
@@ -175,8 +175,8 @@ const Root: React.FC = () => {
   if (state.phase === 'checkingLicense') {
     return (
       <Box padding={1} gap={1}>
-        <Text color="#6B7280">⟳</Text>
-        <Text color="#4B5563">Vérification de la licence...</Text>
+        <Text color="#6B7280">...</Text>
+        <Text color="#4B5563">Verification de la licence...</Text>
       </Box>
     );
   }
@@ -197,14 +197,14 @@ const Root: React.FC = () => {
       <WaitScreen lines={[
         'Bienvenue sur NUXEN!',
         '',
-        'Les fichiers de configuration ont été créés:',
-        `  • ${PATHS.configJson}`,
-        `  • ${PATHS.proxiesDir}\\proxies.txt`,
-        `  • ${PATHS.ticketmasterDir}\\example.csv`,
+        'Les fichiers de configuration ont ete crees:',
+        `  - ${PATHS.configJson}`,
+        `  - ${PATHS.proxiesDir}\\proxies.txt`,
+        `  - ${PATHS.ticketmasterDir}\\example.csv`,
         '',
-        '1. Édite config.json (clé Capsolver + license_key + webhook)',
-        '2. Édite Proxies/proxies.txt (tes proxies, un par ligne)',
-        '3. Édite TicketMaster/example.csv ou crée tes propres CSV',
+        '1. Edite config.json (cle Capsolver + license_key + webhook)',
+        '2. Edite Proxies/proxies.txt (tes proxies, un par ligne)',
+        '3. Edite TicketMaster/example.csv ou cree tes propres CSV',
         '4. Relance NUXEN.exe',
       ]} />
     );

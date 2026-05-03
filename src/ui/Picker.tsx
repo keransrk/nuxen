@@ -3,12 +3,11 @@ import { Box, Text, useInput } from 'ink';
 import gradient from 'gradient-string';
 
 const LOGO_LINES = [
-  '███╗   ██╗██╗   ██╗██╗  ██╗███████╗███╗   ██╗',
-  '████╗  ██║██║   ██║╚██╗██╔╝██╔════╝████╗  ██║',
-  '██╔██╗ ██║██║   ██║ ╚███╔╝ █████╗  ██╔██╗ ██║',
-  '██║╚██╗██║██║   ██║ ██╔██╗ ██╔══╝  ██║╚██╗██║',
-  '██║ ╚████║╚██████╔╝██╔╝ ██╗███████╗██║ ╚████║',
-  '╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝',
+  '##  ##  ##  ##  ##  ##  ######  ##  ##',
+  '###  ## ##  ## ###  ##  ##      ###  ##',
+  '## # ## ##  ## ## # ##  ######  ## # ##',
+  '##  ### ##  ## ##  ###  ##      ##  ###',
+  '##   ##  ####  ##   ##  ######  ##   ##',
 ];
 
 const nuxenGradient = gradient(['#9333EA', '#3B82F6']);
@@ -41,7 +40,6 @@ export const Picker: React.FC<PickerProps> = ({
       onBack();
       return;
     }
-
     if (key.return) {
       const n = parseInt(input, 10);
       if (!isNaN(n) && n >= 1 && n <= options.length) {
@@ -51,12 +49,10 @@ export const Picker: React.FC<PickerProps> = ({
       setInput('');
       return;
     }
-
     if (key.backspace || key.delete) {
       setInput(prev => prev.slice(0, -1));
       return;
     }
-
     if (/^[0-9]$/.test(char)) {
       setInput(prev => (prev + char).slice(0, 3));
     }
@@ -71,7 +67,7 @@ export const Picker: React.FC<PickerProps> = ({
       <Box marginTop={showLogo ? 2 : 0} flexDirection="column" alignItems="center">
         <Text color="#9CA3AF">{title}</Text>
         {subtitle && <Text color="#6B7280">{subtitle}</Text>}
-        <Text color="#4B5563">{'─'.repeat(50)}</Text>
+        <Text color="#4B5563">{'--------------------------------------------------'}</Text>
       </Box>
 
       <Box marginTop={1} flexDirection="column" alignItems="flex-start" width={60}>
@@ -91,22 +87,21 @@ export const Picker: React.FC<PickerProps> = ({
 
         {options.length > 0 && (
           <Box marginTop={1}>
-            <Text color="#9333EA" bold>Choix › </Text>
-            <Text color="#F9FAFB">{input}</Text>
-            <Text color="#9333EA" bold>█</Text>
+            <Text color="#9333EA" bold>{'> '}</Text>
+            <Text color="#F9FAFB">{input || '_'}</Text>
           </Box>
         )}
       </Box>
 
       {error && (
         <Box marginTop={1}>
-          <Text color="#EF4444">⚠ {error}</Text>
+          <Text color="#EF4444">[!] {error}</Text>
         </Box>
       )}
 
       <Box marginTop={1}>
         <Text color="#4B5563" dimColor>
-          {onBack ? '[Esc] Retour · ' : ''}[Entrée] Valider · [Q] Quitter
+          {onBack ? '[Esc] Retour | ' : ''}[Entree] Valider | [Q] Quitter
         </Text>
       </Box>
     </Box>

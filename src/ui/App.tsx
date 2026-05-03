@@ -152,14 +152,14 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
   if (configErrors.length > 0) {
     return (
       <Box flexDirection="column" padding={2}>
-        <Text color="#EF4444" bold>⚠ Configuration incomplète</Text>
-        {configErrors.map((e, i) => <Text key={i} color="#F87171">  • {e}</Text>)}
-        <Text color="#9CA3AF">Édite config.json puis relance NUXEN.exe</Text>
+        <Text color="#EF4444" bold>[!] Configuration incomplete</Text>
+        {configErrors.map((e, i) => <Text key={i} color="#F87171">  - {e}</Text>)}
+        <Text color="#9CA3AF">Edite config.json puis relance Nuxen.exe</Text>
       </Box>
     );
   }
 
-  // ─── Écran 1: Choix du module ────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ ├ëcran 1: Choix du module ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (screen === 'modulePick') {
     const moduleOptions: PickerOption[] = modules.map(m => ({
       id: m.name,
@@ -185,7 +185,7 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
     );
   }
 
-  // ─── Écran 2: Choix du fichier task ──────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ ├ëcran 2: Choix du fichier task ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (screen === 'taskFilePick') {
     const mod = modules.find(m => m.name === selectedModule);
     const fileOptions: PickerOption[] = (mod?.taskFiles ?? []).map(f => ({
@@ -194,8 +194,8 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
 
     return (
       <Picker
-        title={`${selectedModule.toUpperCase()} — TASK FILE`}
-        subtitle="Choisis le fichier de tâches à lancer"
+        title={`${selectedModule.toUpperCase()} - TASK FILE`}
+        subtitle="Choisis le fichier de taches a lancer"
         options={fileOptions}
         showLogo
         error={pickerError}
@@ -216,14 +216,14 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
           }
 
           if (parsed.errors.length > 0 && parsed.rows.length === 0) {
-            setPickerError(parsed.errors.map(e => `Ligne ${e.row}: ${e.message}`).join(' · '));
+            setPickerError(parsed.errors.map(e => `Ligne ${e.row}: ${e.message}`).join(' | '));
             return;
           }
 
           // Lancer
           const result = startFromRows(parsed.rows, config, filename);
           if (result.errors.length > 0 && storeState.tasks.length === 0) {
-            setPickerError(result.errors.join(' · '));
+            setPickerError(result.errors.join(' | '));
             return;
           }
 
@@ -235,7 +235,7 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
     );
   }
 
-  // ─── Dashboard ────────────────────────────────────────────────────────────
+  // ÔöÇÔöÇÔöÇ Dashboard ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const tasks = storeState.tasks;
   const successCount = tasks.filter(t => t.status === 'success').length;
   const errorCount = tasks.filter(t => t.status === 'error').length;
@@ -255,14 +255,14 @@ export const App: React.FC<AppProps> = ({ config, configErrors }) => {
       />
 
       <Box paddingX={2} paddingBottom={1} gap={2}>
-        <Text color="#22C55E">✓ {successCount} succès</Text>
-        <Text color="#EF4444">✗ {errorCount} erreurs</Text>
-        <Text color="#9333EA">◑ {runningCount} en cours</Text>
-        {queuedCount > 0 && <Text color="#38BDF8">⏳ {queuedCount} en file</Text>}
-        {storeState.isRunning && <Text color="#4B5563">⏱ {elapsedStr}</Text>}
+        <Text color="#22C55E">[OK] {successCount} succes</Text>
+        <Text color="#EF4444">[X] {errorCount} erreurs</Text>
+        <Text color="#9333EA">[~] {runningCount} en cours</Text>
+        {queuedCount > 0 && <Text color="#38BDF8">[Q] {queuedCount} en file</Text>}
+        {storeState.isRunning && <Text color="#4B5563">{elapsedStr}</Text>}
         {autoRetry && (
           <Text color={autoRetryCountdown > 0 ? '#F59E0B' : '#22C55E'}>
-            {autoRetryCountdown > 0 ? `↻ retry dans ${autoRetryCountdown}s` : '↻ auto-retry ON'}
+            {autoRetryCountdown > 0 ? `[A] retry dans ${autoRetryCountdown}s` : '[A] auto-retry ON'}
           </Text>
         )}
       </Box>
