@@ -8,6 +8,7 @@ export interface AppConfig {
   poll_status_max_minutes: number;
   request_delay_ms: number;
   license_key: string;
+  license_server_url: string;
 }
 
 const EXE_DIR = path.dirname(process.execPath ?? process.argv[1] ?? process.cwd());
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: AppConfig = {
   poll_status_max_minutes: 30,
   request_delay_ms: 3000,
   license_key: '',
+  license_server_url: 'https://nuxen.sdss.fr',
 };
 
 const PROXIES_TEMPLATE =
