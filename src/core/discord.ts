@@ -37,6 +37,7 @@ export const sendDiscordNotification = async (
   proxyLabel: string,
   sessionUrl?: string,
   seanceDateIso?: string,
+  isContiguous?: boolean,
 ) => {
   if (!webhookUrl || !webhookUrl.includes('discord.com/api/webhooks')) return;
 
@@ -61,8 +62,9 @@ export const sendDiscordNotification = async (
     : new Date(cartCreatedAt.getTime() + 8 * 60 * 1000);
   const expiresStr = formatTime(expiresAt.toISOString());
 
-  // Contiguë
-  const contiguous = item?.warningNoContiguousTickets === true ? '⚠ Non contiguës' : '✓ Contiguës';
+  // Contiguë (override par parametre, sinon depuis basket)
+  const contiguousFlag = isContiguous ?? !item?.warningNoContiguousTickets;
+  const contiguous = contiguousFlag ? '✓ Contiguës' : '⚠ Non contiguës';
 
   const openUrl = sessionUrl || `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
   const ping = userIdToPing ? `<@${userIdToPing}> ` : '';

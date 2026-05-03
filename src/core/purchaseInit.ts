@@ -65,9 +65,11 @@ export const purchaseInit = async (
   place: SelectedPlace,
   recaptchaToken: string,
   taskId: number,
-  queueItCookie?: string
+  queueItCookie?: string,
+  offerCode?: string | null,
 ): Promise<PurchaseResult | QueueItResult> => {
-  const url = `${TM_BASE}/api/purchase/init/manifestation/idmanif/${idmanif}?tarifPromoPartner=false`;
+  const promoQuery = offerCode ? `&codePromo=${encodeURIComponent(offerCode)}` : '';
+  const url = `${TM_BASE}/api/purchase/init/manifestation/idmanif/${idmanif}?tarifPromoPartner=${offerCode ? 'true' : 'false'}${promoQuery}`;
   const pageUrl = `${TM_BASE}/fr/manifestation/${slug}-billet/idmanif/${idmanif}`;
 
   const headers: Record<string, string> = {

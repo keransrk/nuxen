@@ -46,17 +46,43 @@ Write-Host "Creation du zip de distribution $zipName..." -ForegroundColor Yellow
 
 $tempDist = "dist_temp_$version"
 if (Test-Path $tempDist) { Remove-Item -Recurse -Force $tempDist }
-New-Item -ItemType Directory -Force -Path "$tempDist\config" | Out-Null
+New-Item -ItemType Directory -Force -Path "$tempDist\Proxies" | Out-Null
+New-Item -ItemType Directory -Force -Path "$tempDist\TicketMaster" | Out-Null
+New-Item -ItemType Directory -Force -Path "$tempDist\Queue-it" | Out-Null
 
 # Copier l'exe
 Copy-Item $exeName "$tempDist\$exeName"
 
-# Creer les fichiers config templates
-$configCsv = "key,value`ncapsolver_api_key,CAP-XXXXX_REMPLACER_PAR_VOTRE_CLE`ndiscord_webhook_url,https://discord.com/api/webhooks/REMPLACER`ndiscord_user_id_to_ping,`nqty_min,1`nqty_max,2`npoll_status_max_minutes,30`nrequest_delay_ms,3000`n"
-$proxiesCsv = "# Un proxy par ligne (format: http://user:pass@host:port)`n# Exemple PacketStream (remplace session et identifiants):`nhttp://10028496:HTC0V7oRwHA67_country-FRANCE_session-11111111@proxy-eu.packetstream.vip:31112`nhttp://10028496:HTC0V7oRwHA67_country-FRANCE_session-22222222@proxy-eu.packetstream.vip:31112`n"
+# config.json template
+$configJson = @{
+  capsolver_api_key = "CAP-XXXXX_REMPLACER_PAR_VOTRE_CLE"
+  default_webhook_url = "https://discord.com/api/webhooks/REMPLACER"
+  discord_user_id_to_ping = ""
+  poll_status_max_minutes = 30
+  request_delay_ms = 3000
+  license_key = ""
+} | ConvertTo-Json
+[System.IO.File]::WriteAllText("$tempDist\config.json", $configJson)
 
-[System.IO.File]::WriteAllText("$tempDist\config\config.csv", $configCsv)
-[System.IO.File]::WriteAllText("$tempDist\config\proxies.csv", $proxiesCsv)
+# Proxies/proxies.txt
+$proxiesTxt = @"
+# Un proxy par ligne (format: user:pass@host:port)
+# NE PAS mettre http:// devant - ajoute automatiquement
+10028496:HTC0V7oRwHA67_country-FRANCE_session-11111111@proxy-eu.packetstream.vip:31112
+10028496:HTC0V7oRwHA67_country-FRANCE_session-22222222@proxy-eu.packetstream.vip:31112
+"@
+[System.IO.File]::WriteAllText("$tempDist\Proxies\proxies.txt", $proxiesTxt)
+
+# TicketMaster/example.csv
+$exampleCsv = @"
+Mode,Url,Price_min,Price_max,Quantity_min,Quantity_max,Proxy_File,Accept_Contigous,Section,Offer_Code,Dates,Webhook
+Drop,https://www.ticketmaster.fr/fr/manifestation/jul-billet/idmanif/640199,30,300,2,3,proxies.txt,true,406,,13/11/2026,
+Drop,,,,,,proxies.txt,true,,,,
+"@
+[System.IO.File]::WriteAllText("$tempDist\TicketMaster\example.csv", $exampleCsv)
+
+# Queue-it placeholder
+[System.IO.File]::WriteAllText("$tempDist\Queue-it\README.txt", "Module Queue-it standalone - a venir.`n")
 
 # Zipper
 if (Test-Path $zipName) { Remove-Item -Force $zipName }

@@ -13,6 +13,7 @@ import { sleep } from '../utils/random.js';
 import type { AppConfig } from '../config/loader.js';
 import type { EventInfo } from './eventResolver.js';
 import type { TmCookies } from './cookies.js';
+import type { TaskRow } from '../config/taskCsv.js';
 
 export interface StopSignal {
   stopped: boolean;
@@ -23,7 +24,8 @@ export const runTask = async (
   proxyUrl: string,
   eventInfo: EventInfo,
   config: AppConfig,
-  stopSignal: StopSignal
+  stopSignal: StopSignal,
+  row: TaskRow
 ) => {
   const log = (msg: string, level: LogLevel = 'info') => {
     store.appendLog(taskId, msg, level);
@@ -172,7 +174,14 @@ export const runTask = async (
     // ─── ÉTAPE 4: Sélection random de place ──────────────────────────────────
     let place: any;
     try {
-      place = pickRandomPlace(seances, config, taskId);
+      place = pickRandomPlace(seances, taskId, {
+        priceMin: row.priceMin,
+        priceMax: row.priceMax,
+        quantityMin: row.quantityMin,
+        quantityMax: row.quantityMax,
+        section: row.section,
+        dates: row.dates,
+      });
     } catch (e: any) {
       return fail(`Sélection place: ${e.message}`);
     }
@@ -204,6 +213,7 @@ export const runTask = async (
       purchaseResult = await purchaseInit(
         tmClient, eventInfo.idmanif, eventInfo.slug,
         place, recaptchaToken, taskId, queueItCookie,
+        row.offerCode,
       );
     } catch (e: any) {
       return fail(`Purchase init: ${e.message}`);
@@ -253,6 +263,7 @@ export const runTask = async (
         purchaseResult = await purchaseInit(
           tmClient, eventInfo.idmanif, eventInfo.slug,
           place, recaptchaToken, taskId, queueItCookie,
+          row.offerCode,
         );
       } catch (e: any) {
         return fail(`Purchase post-queue: ${e.message}`);
@@ -261,13 +272,21 @@ export const runTask = async (
       if (purchaseResult.isQueueIt) return fail('Queue-it re-détecté — abandon');
     }
 
-    // ─── ÉTAPE 7: Succès ───────────────────────────────────────────────────────
+    // ─── ÉTAPE 7bis: Verification contiguite ──────────────────────────────────
     const basket = purchaseResult.basket;
+    const firstItem = basket.items?.[0];
+    const isContiguous = !firstItem?.warningNoContiguousTickets;
+
+    if (row.acceptContiguous && !isContiguous) {
+      return fail('Places non contiguës rejetées (Accept_Contigous=true)');
+    }
+
+    // ─── ÉTAPE 7: Succès ───────────────────────────────────────────────────────
     const sub = basket.items?.[0]?.subEventBasketDto?.[0];
     const tickets = sub?.tickets ?? [];
     const seatsStr = tickets.map((t: any) => `${t.llgzone} R${t.rgplac} S${t.numplac}`).join(' · ') || 'Automatique';
 
-    log(`✓ PANIER CRÉÉ! ID #${basket.id} — ${basket.price}€`, 'success');
+    log(`✓ PANIER CRÉÉ! ID #${basket.id} — ${basket.price}€${isContiguous ? ' · contigu' : ' · non-contigu'}`, 'success');
     log(`  ${sub?.llgcatpl ?? place.llgcatpl} · ${seatsStr}`, 'success');
 
     store.updateTask(taskId, {
@@ -293,13 +312,15 @@ export const runTask = async (
 
     // ─── ÉTAPE 9: Notification Discord ────────────────────────────────────────
     log('⑧ Envoi notification Discord...', 'step');
+    const webhookUrl = row.webhook || config.default_webhook_url;
     try {
       await sendDiscordNotification(
-        config.discord_webhook_url, config.discord_user_id_to_ping,
+        webhookUrl, config.discord_user_id_to_ping,
         basket, cookies, eventInfo,
         store.state.tasks.find(t => t.id === taskId)?.proxyLabel ?? proxyUrl.slice(-8),
         sessionUrl,
         place.dateSeance,
+        isContiguous,
       );
       log('✓ Notification Discord envoyée', 'success');
     } catch (e: any) {

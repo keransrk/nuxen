@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { EventPrompt } from './EventPrompt.js';
+import { Picker, type PickerOption } from './Picker.js';
 import { Header } from './Header.js';
 import { TasksDashboard } from './TasksDashboard.js';
 import { MenuBar } from './MenuBar.js';
 import { store, type GlobalStore } from '../core/store.js';
-import { startAll, stopAll, restartAll, retryErrors, changeEvent } from '../core/orchestrator.js';
-import { resolveEventUrl } from '../core/eventResolver.js';
-import type { AppConfig, ProxyEntry } from '../config/loader.js';
+import { startFromRows, stopAll, restartAll, retryErrors, changeTaskFile } from '../core/orchestrator.js';
+import { listModules, type AppConfig } from '../config/loader.js';
+import { parseTaskCsv, type TaskRow } from '../config/taskCsv.js';
+import path from 'path';
 
-type Screen = 'prompt' | 'dashboard';
+type Screen = 'modulePick' | 'taskFilePick' | 'dashboard';
 
 interface AppProps {
   config: AppConfig;
-  proxies: ProxyEntry[];
   configErrors: string[];
 }
 
@@ -39,16 +39,19 @@ const useElapsed = (isRunning: boolean) => {
   return m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
 };
 
-export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
+export const App: React.FC<AppProps> = ({ config, configErrors }) => {
   const { exit } = useApp();
-  const [screen, setScreen] = useState<Screen>('prompt');
+  const [screen, setScreen] = useState<Screen>('modulePick');
   const [storeState, setStoreState] = useState<GlobalStore>(store.state);
-  const [promptError, setPromptError] = useState<string>('');
+  const [pickerError, setPickerError] = useState<string>('');
   const [scrollOffset, setScrollOffset] = useState(0);
   const [autoRetry, setAutoRetry] = useState(false);
   const [autoRetryCountdown, setAutoRetryCountdown] = useState(0);
+  const [selectedModule, setSelectedModule] = useState<string>('');
   const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const elapsedStr = useElapsed(storeState.isRunning);
+
+  const modules = listModules();
 
   // Subscribe to store
   useEffect(() => {
@@ -57,7 +60,7 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
     return () => { store.off('change', onChange); };
   }, []);
 
-  // Auto-retry logic: when all tasks are done and auto-retry is on
+  // Auto-retry logic
   useEffect(() => {
     if (!autoRetry || storeState.isRunning || screen !== 'dashboard') return;
     if (storeState.tasks.length === 0) return;
@@ -66,55 +69,47 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
       ['success', 'error', 'stopped'].includes(t.status)
     );
     const hasErrors = storeState.tasks.some(t => t.status === 'error' || t.status === 'stopped');
-
     if (!allDone || !hasErrors) return;
 
-    // Start 30s countdown
     let countdown = 30;
     setAutoRetryCountdown(countdown);
-
     const tick = setInterval(() => {
       countdown--;
       setAutoRetryCountdown(countdown);
       if (countdown <= 0) {
         clearInterval(tick);
         setAutoRetryCountdown(0);
-        retryErrors(proxies, config);
+        retryErrors(config);
       }
     }, 1000);
-
     autoRetryTimerRef.current = tick as any;
     return () => clearInterval(tick);
   }, [storeState.isRunning, autoRetry, screen]);
 
-  // Global key bindings
+  // Global key bindings (dashboard only)
   useInput((char, key) => {
     if (screen !== 'dashboard') return;
     const upperChar = char.toUpperCase();
 
-    // Quit app
-    if (upperChar === 'Q' && !focusMode) {
+    if (upperChar === 'Q') {
       stopAll();
       setTimeout(() => exit(), 300);
       return;
     }
-
-    // Change event → back to prompt
-    if (upperChar === 'C' && !focusMode) {
+    if (upperChar === 'C') {
       if (autoRetryTimerRef.current) {
         clearInterval(autoRetryTimerRef.current);
         autoRetryTimerRef.current = null;
       }
       setAutoRetry(false);
       setAutoRetryCountdown(0);
-      changeEvent();
+      changeTaskFile();
       setScrollOffset(0);
-      setScreen('prompt');
+      setSelectedModule('');
+      setScreen('modulePick');
       return;
     }
-
-    // Stop all
-    if (upperChar === 'S' && !focusMode && storeState.isRunning) {
+    if (upperChar === 'S' && storeState.isRunning) {
       if (autoRetryTimerRef.current) {
         clearInterval(autoRetryTimerRef.current);
         autoRetryTimerRef.current = null;
@@ -123,20 +118,16 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
       stopAll();
       return;
     }
-
-    // Restart all (when stopped)
-    if (upperChar === 'R' && !focusMode && !storeState.isRunning) {
+    if (upperChar === 'R' && !storeState.isRunning) {
       if (autoRetryTimerRef.current) {
         clearInterval(autoRetryTimerRef.current);
         autoRetryTimerRef.current = null;
         setAutoRetryCountdown(0);
       }
-      restartAll(proxies, config);
+      restartAll(config);
       return;
     }
-
-    // Auto-retry toggle
-    if (upperChar === 'A' && !focusMode) {
+    if (upperChar === 'A') {
       setAutoRetry(prev => {
         if (prev && autoRetryTimerRef.current) {
           clearInterval(autoRetryTimerRef.current);
@@ -147,15 +138,11 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
       });
       return;
     }
-
-    // Scroll up
-    if ((upperChar === 'T' || key.upArrow)) {
+    if (upperChar === 'T' || key.upArrow) {
       setScrollOffset(prev => Math.max(0, prev - 5));
       return;
     }
-
-    // Scroll down
-    if ((upperChar === 'B' || key.downArrow)) {
+    if (upperChar === 'B' || key.downArrow) {
       setScrollOffset(prev => prev + 5);
       return;
     }
@@ -167,41 +154,96 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
       <Box flexDirection="column" padding={2}>
         <Text color="#EF4444" bold>⚠ Configuration incomplète</Text>
         {configErrors.map((e, i) => <Text key={i} color="#F87171">  • {e}</Text>)}
-        <Text color="#9CA3AF" marginTop={1}>Éditez config/config.csv puis relancez NUXEN.exe</Text>
+        <Text color="#9CA3AF">Édite config.json puis relance NUXEN.exe</Text>
       </Box>
     );
   }
 
-  // Prompt screen
-  if (screen === 'prompt') {
+  // ─── Écran 1: Choix du module ────────────────────────────────────────────
+  if (screen === 'modulePick') {
+    const moduleOptions: PickerOption[] = modules.map(m => ({
+      id: m.name,
+      label: m.name,
+      hint: `${m.taskFiles.length} fichier${m.taskFiles.length > 1 ? 's' : ''}`,
+      disabled: m.taskFiles.length === 0,
+    }));
+
     return (
-      <EventPrompt
-        proxyCount={proxies.length}
-        error={promptError}
-        onSubmit={(url) => {
-          try {
-            resolveEventUrl(url);
-            setPromptError('');
-            setScrollOffset(0);
-            setScreen('dashboard');
-            startAll(url, proxies, config);
-          } catch (e: any) {
-            setPromptError(e.message);
-          }
+      <Picker
+        title="MODULE"
+        subtitle="Choisis le site cible"
+        options={moduleOptions}
+        showLogo
+        error={pickerError}
+        emptyMessage="Aucun module avec des fichiers task. Ajoute des CSV dans TicketMaster/"
+        onSelect={(id) => {
+          setSelectedModule(id);
+          setPickerError('');
+          setScreen('taskFilePick');
         }}
       />
     );
   }
 
-  // Dashboard
+  // ─── Écran 2: Choix du fichier task ──────────────────────────────────────
+  if (screen === 'taskFilePick') {
+    const mod = modules.find(m => m.name === selectedModule);
+    const fileOptions: PickerOption[] = (mod?.taskFiles ?? []).map(f => ({
+      id: f, label: f,
+    }));
+
+    return (
+      <Picker
+        title={`${selectedModule.toUpperCase()} — TASK FILE`}
+        subtitle="Choisis le fichier de tâches à lancer"
+        options={fileOptions}
+        showLogo
+        error={pickerError}
+        emptyMessage={`Aucun .csv dans ${selectedModule}/`}
+        onBack={() => {
+          setSelectedModule('');
+          setPickerError('');
+          setScreen('modulePick');
+        }}
+        onSelect={(filename) => {
+          if (!mod) return;
+          const fullPath = path.join(mod.dir, filename);
+          let parsed;
+          try { parsed = parseTaskCsv(fullPath); }
+          catch (e: any) {
+            setPickerError(`Erreur lecture CSV: ${e.message}`);
+            return;
+          }
+
+          if (parsed.errors.length > 0 && parsed.rows.length === 0) {
+            setPickerError(parsed.errors.map(e => `Ligne ${e.row}: ${e.message}`).join(' · '));
+            return;
+          }
+
+          // Lancer
+          const result = startFromRows(parsed.rows, config, filename);
+          if (result.errors.length > 0 && storeState.tasks.length === 0) {
+            setPickerError(result.errors.join(' · '));
+            return;
+          }
+
+          setPickerError('');
+          setScrollOffset(0);
+          setScreen('dashboard');
+        }}
+      />
+    );
+  }
+
+  // ─── Dashboard ────────────────────────────────────────────────────────────
   const tasks = storeState.tasks;
   const successCount = tasks.filter(t => t.status === 'success').length;
   const errorCount = tasks.filter(t => t.status === 'error').length;
   const runningCount = tasks.filter(t => !['success', 'error', 'stopped', 'idle'].includes(t.status)).length;
   const queuedCount = tasks.filter(t => t.status === 'queued').length;
 
-  const eventName = storeState.slug
-    ? storeState.slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const eventName = storeState.taskFileName
+    ? storeState.taskFileName.replace(/\.csv$/i, '')
     : '';
 
   return (
@@ -212,7 +254,6 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
         isRunning={storeState.isRunning}
       />
 
-      {/* Stats bar */}
       <Box paddingX={2} paddingBottom={1} gap={2}>
         <Text color="#22C55E">✓ {successCount} succès</Text>
         <Text color="#EF4444">✗ {errorCount} erreurs</Text>
@@ -226,15 +267,9 @@ export const App: React.FC<AppProps> = ({ config, proxies, configErrors }) => {
         )}
       </Box>
 
-      <TasksDashboard
-        tasks={tasks}
-        scrollOffset={scrollOffset}
-      />
+      <TasksDashboard tasks={tasks} scrollOffset={scrollOffset} />
 
-      <MenuBar
-        isRunning={storeState.isRunning}
-        autoRetry={autoRetry}
-      />
+      <MenuBar isRunning={storeState.isRunning} autoRetry={autoRetry} />
     </Box>
   );
 };

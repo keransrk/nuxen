@@ -23,6 +23,9 @@ export interface TaskState {
   id: number;
   proxyLabel: string;
   proxyUrl: string;
+  rowIndex?: number;
+  eventLabel?: string;
+  mode?: string;
   status: TaskStatus;
   statusText: string;
   queuePosition: string;
@@ -42,6 +45,7 @@ export interface GlobalStore {
   eventUrl: string;
   idmanif: string;
   slug: string;
+  taskFileName: string;
   isRunning: boolean;
 }
 
@@ -51,6 +55,7 @@ class Store extends EventEmitter {
     eventUrl: '',
     idmanif: '',
     slug: '',
+    taskFileName: '',
     isRunning: false,
   };
 
@@ -90,6 +95,11 @@ class Store extends EventEmitter {
     this.emit('change');
   }
 
+  setTaskFile(name: string) {
+    this.state.taskFileName = name;
+    this.emit('change');
+  }
+
   setRunning(v: boolean) {
     this.state.isRunning = v;
     this.emit('change');
@@ -101,6 +111,7 @@ class Store extends EventEmitter {
       eventUrl: '',
       idmanif: '',
       slug: '',
+      taskFileName: '',
       isRunning: false,
     };
     this.emit('change');

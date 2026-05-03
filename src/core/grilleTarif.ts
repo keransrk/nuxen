@@ -1,7 +1,6 @@
 import { HttpClient } from '../utils/http.js';
 import { pickRandom, randomInt } from '../utils/random.js';
 import { logger } from '../utils/logger.js';
-import type { AppConfig } from '../config/loader.js';
 
 const TM_BASE = 'https://www.ticketmaster.fr';
 const PARTNER_ID = '78768';
@@ -60,14 +59,12 @@ export interface SelectedPlace {
   dateSeance: string;
 }
 
-const TM_HEADERS = {
+const TM_HEADERS_BASE = {
   Accept: 'application/json',
   'Accept-Language': 'fr-FR,fr;q=0.9',
   Referer: `${TM_BASE}/fr`,
-  'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
-  'sec-ch-ua-mobile': '?0',
-  'sec-ch-ua-platform': '"Windows"',
 };
+void TM_HEADERS_BASE;
 
 export const getGrilleTarifaire = async (
   client: HttpClient,
@@ -109,36 +106,87 @@ export const getGrilleTarifaire = async (
 
 export const pickRandomPlace = (
   seances: Seance[],
-  config: AppConfig,
-  taskId: number
+  taskId: number,
+  filters: {
+    priceMin?: number | null;
+    priceMax?: number | null;
+    quantityMin?: number | null;
+    quantityMax?: number | null;
+    section?: string | null;
+    dates?: string[];
+  }
 ): SelectedPlace => {
-  // Filter available seances
-  const available = seances.filter(
+  // Filtre dates si specifie
+  let available = seances.filter(
     s => s.hasPlacesDispo && s.status === 'D' && Array.isArray(s.infoCategories)
   );
+
+  if (filters.dates && filters.dates.length > 0) {
+    // Import dynamique evite cycle
+    const { matchesDateFilter } = require('../config/taskCsv.js') as typeof import('../config/taskCsv.js');
+    available = available.filter(s => matchesDateFilter(s.dateSeance, filters.dates!));
+    if (available.length === 0) {
+      throw new Error(`Aucune séance disponible pour les dates: ${filters.dates.join(', ')}`);
+    }
+  }
 
   if (available.length === 0) throw new Error('Aucune séance disponible (hasPlacesDispo = false ou complet)');
 
   const seance = pickRandom(available);
 
-  // Filter categories with available places, prefer standard (idNatCl=1 = TARIF NORMAL)
-  const cats = seance.infoCategories!.filter(
+  // Filtre categories
+  let cats = seance.infoCategories!.filter(
     c => c.nbPlaces > 0 && Array.isArray(c.infoNatCliTarifs)
   );
+
+  // Filtre par section si specifie (match codCatPl ou llgCatPl)
+  if (filters.section) {
+    const sec = filters.section.toLowerCase();
+    const filtered = cats.filter(c =>
+      c.codCatPl?.toLowerCase().includes(sec) ||
+      c.llgCatPl?.toLowerCase().includes(sec) ||
+      c.llcCatPl?.toLowerCase().includes(sec)
+    );
+    if (filtered.length === 0) {
+      throw new Error(`Section "${filters.section}" introuvable dans cette séance`);
+    }
+    cats = filtered;
+  }
+
+  // Filtre par prix (sur priceMin de la categorie)
+  if (filters.priceMin != null || filters.priceMax != null) {
+    const filtered = cats.filter(c => {
+      const p = c.priceMin;
+      if (filters.priceMin != null && p < filters.priceMin) return false;
+      if (filters.priceMax != null && p > filters.priceMax) return false;
+      return true;
+    });
+    if (filtered.length === 0) {
+      throw new Error(`Aucune catégorie dans la fourchette de prix [${filters.priceMin ?? '−∞'}€ — ${filters.priceMax ?? '+∞'}€]`);
+    }
+    cats = filtered;
+  }
 
   if (cats.length === 0) throw new Error('Aucune catégorie avec des places disponibles');
 
   const cat = pickRandom(cats);
 
-  // Prefer idNatCl=1 (TARIF NORMAL), fallback to first available
   const tarif =
     cat.infoNatCliTarifs.find(t => t.idNatCl === 1 && t.inddispo) ??
     cat.infoNatCliTarifs.find(t => t.inddispo);
 
   if (!tarif) throw new Error(`Aucun tarif disponible dans ${cat.llgCatPl}`);
 
-  const maxQty = Math.min(tarif.max, config.qty_max);
-  const minQty = Math.max(tarif.min, config.qty_min);
+  // Quantites: respecter les limites du tarif + filtres CSV
+  // Si CSV vide → fenetre random au-dessus/dessous de l'autre
+  let qMin = filters.quantityMin ?? null;
+  let qMax = filters.quantityMax ?? null;
+  if (qMin == null && qMax != null) qMin = Math.max(tarif.min, 1);
+  if (qMax == null && qMin != null) qMax = Math.min(tarif.max, qMin + 2);
+  if (qMin == null && qMax == null) { qMin = tarif.min; qMax = Math.min(tarif.max, 2); }
+
+  const minQty = Math.max(tarif.min, qMin!);
+  const maxQty = Math.min(tarif.max, qMax!);
   const qty = minQty <= maxQty ? randomInt(minQty, maxQty) : tarif.min;
 
   logger.info(

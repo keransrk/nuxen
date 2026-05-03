@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { App } from './ui/App.js';
 import { UpdateScreen } from './ui/UpdateScreen.js';
-import { loadConfig, validateConfig } from './config/loader.js';
+import { loadConfig, validateConfig, PATHS } from './config/loader.js';
 import { checkForUpdate, downloadAndApplyUpdate, type UpdateCheckResult } from './core/updater.js';
 import { APP_VERSION } from './version.js';
 
@@ -10,19 +10,16 @@ process.title = 'NUXEN';
 
 // ─── Load configuration ────────────────────────────────────────────────────────
 let _config: ReturnType<typeof loadConfig>['config'];
-let _proxies: ReturnType<typeof loadConfig>['proxies'];
-let _configCreated = false;
+let _firstRun = false;
 let _loadError: string | null = null;
 
 try {
   const result = loadConfig();
   _config = result.config;
-  _proxies = result.proxies;
-  _configCreated = result.created;
+  _firstRun = result.firstRun;
 } catch (e: any) {
   _loadError = e?.message ?? String(e);
   _config = {} as any;
-  _proxies = [];
 }
 
 const configErrors = _loadError ? [] : validateConfig(_config!);
@@ -50,8 +47,7 @@ const Root: React.FC = () => {
   >({ phase: 'checking' });
 
   useEffect(() => {
-    // Si erreur de config ou config vide, pas besoin de vérifier les MAJ
-    if (_loadError || _configCreated || _proxies.length === 0) {
+    if (_loadError || _firstRun) {
       setUpdateState({ phase: 'ready' });
       return;
     }
@@ -90,36 +86,29 @@ const Root: React.FC = () => {
     );
   }
 
-  // Erreur de chargement de config
   if (_loadError) {
     return <ExitScreen lines={[`Erreur chargement config: ${_loadError}`]} isError />;
   }
 
-  // Config créée pour la première fois — fenêtre ne se ferme plus immédiatement
-  if (_configCreated) {
+  if (_firstRun) {
     return (
       <ExitScreen lines={[
-        'Fichiers de configuration créés dans le dossier du bot.',
-        'Édite config/config.csv (clé Capsolver, webhook Discord)',
-        'et config/proxies.csv (tes proxies PacketStream)',
-        'puis relance NUXEN.',
+        'Bienvenue sur NUXEN!',
+        '',
+        'Les fichiers de configuration ont été créés:',
+        `  • ${PATHS.configJson}`,
+        `  • ${PATHS.proxiesDir}\\proxies.txt`,
+        `  • ${PATHS.ticketmasterDir}\\example.csv`,
+        '',
+        '1. Édite config.json (clé Capsolver + webhook par défaut)',
+        '2. Édite Proxies/proxies.txt (tes proxies, un par ligne)',
+        '3. Édite TicketMaster/example.csv ou crée tes propres CSV',
+        '4. Relance NUXEN.exe',
       ]} />
     );
   }
 
-  // Aucun proxy configuré
-  if (_proxies.length === 0) {
-    return (
-      <ExitScreen
-        lines={['Aucun proxy dans config/proxies.csv', 'Ajoute tes proxies puis relance.']}
-        isError
-      />
-    );
-  }
-
-  return (
-    <App config={_config!} proxies={_proxies} configErrors={configErrors} />
-  );
+  return <App config={_config!} configErrors={configErrors} />;
 };
 
 // ─── Render TUI ────────────────────────────────────────────────────────────────
