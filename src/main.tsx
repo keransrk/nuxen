@@ -74,7 +74,6 @@ const Root: React.FC = () => {
       setState({ phase: 'checkingLicense' });
       try {
         const lic: LicenseValidationResult = await validateLicense(
-          _config.license_server_url,
           _config.license_key,
           APP_VERSION,
         );

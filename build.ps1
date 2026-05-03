@@ -61,7 +61,6 @@ $configJson = @{
   poll_status_max_minutes = 30
   request_delay_ms = 3000
   license_key = ""
-  license_server_url = "https://nuxen.sdss.fr"
 } | ConvertTo-Json
 [System.IO.File]::WriteAllText("$tempDist\config.json", $configJson)
 

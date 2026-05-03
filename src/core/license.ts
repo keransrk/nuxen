@@ -4,6 +4,9 @@ import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 
+// URL hardcodée dans le binaire — invisible dans config.json
+const LICENSE_SERVER_URL = 'https://nuxen.sdss.fr';
+
 // ─── HWID detection (Windows) ─────────────────────────────────────────────────
 // On combine : MachineGuid (registre) + nom machine + MAC principale
 // Resultat : un hash SHA-256 stable pour chaque PC
@@ -48,7 +51,6 @@ export interface LicenseValidationResult {
 }
 
 export const validateLicense = (
-  serverUrl: string,
   key: string,
   version: string,
   timeoutMs = 8000
@@ -57,13 +59,8 @@ export const validateLicense = (
     if (!key || !key.trim()) {
       return resolve({ valid: false, reason: 'Aucune clé de licence dans config.json' });
     }
-    if (!serverUrl) {
-      return resolve({ valid: false, reason: 'license_server_url manquant dans config.json' });
-    }
 
-    let url: URL;
-    try { url = new URL('/api/validate', serverUrl); }
-    catch { return resolve({ valid: false, reason: 'license_server_url invalide' }); }
+    const url = new URL('/api/validate', LICENSE_SERVER_URL);
 
     const lib = url.protocol === 'https:' ? https : http;
     const payload = JSON.stringify({
