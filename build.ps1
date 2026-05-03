@@ -15,9 +15,9 @@ $version = ($versionLine -replace ".*'([\d.]+)'.*", '$1').Trim()
 if (-not $version -or $version -eq $versionLine) {
   $version = ($versionLine -replace '.*"([\d.]+)".*', '$1').Trim()
 }
-$exeName = "Nuxen-$version.exe"
+$exeName = "Nuxen.exe"
 $zipName = "Nuxen-$version.zip"
-Write-Host "NUXEN v$version -> $zipName" -ForegroundColor Cyan
+Write-Host "NUXEN v$version -> $zipName (exe: $exeName)" -ForegroundColor Cyan
 
 # Tuer tout process NUXEN en cours
 Get-Process | Where-Object { $_.Name -like "Nuxen*" } | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -50,8 +50,8 @@ New-Item -ItemType Directory -Force -Path "$tempDist\Proxies" | Out-Null
 New-Item -ItemType Directory -Force -Path "$tempDist\TicketMaster" | Out-Null
 New-Item -ItemType Directory -Force -Path "$tempDist\Queue-it" | Out-Null
 
-# Copier l'exe
-Copy-Item $exeName "$tempDist\$exeName"
+# Copier l'exe (toujours Nuxen.exe dans le zip)
+Copy-Item $exeName "$tempDist\Nuxen.exe"
 
 # config.json template
 $configJson = @{

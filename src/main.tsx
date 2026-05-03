@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import gradient from 'gradient-string';
 import { App } from './ui/App.js';
-import { UpdateScreen } from './ui/UpdateScreen.js';
 import { loadConfig, validateConfig, PATHS } from './config/loader.js';
 import { checkForUpdate, downloadAndApplyUpdate, type UpdateCheckResult } from './core/updater.js';
 import { validateLicense, type LicenseValidationResult } from './core/license.js';
@@ -86,43 +85,12 @@ const LicenseInvalidScreen: React.FC<{ reason: string }> = ({ reason }) => {
   );
 };
 
-const UpdateConfirmScreen: React.FC<{
-  result: UpdateCheckResult;
-  onConfirm: () => void;
-  onSkip: () => void;
-}> = ({ result, onConfirm, onSkip }) => {
-  useInput((char) => {
-    const c = char.toUpperCase();
-    if (c === 'O' || c === 'Y') onConfirm();
-    if (c === 'N') onSkip();
-  });
-  return (
-    <Box flexDirection="column" padding={2} gap={1}>
-      <Text>{nuxenGradient('NUXEN')}</Text>
-      <Text color="#7C3AED" bold>  Mise à jour disponible</Text>
-      <Box gap={2} marginTop={1}>
-        <Text color="#6B7280">Version actuelle :</Text>
-        <Text color="#EF4444">v{result.currentVersion}</Text>
-        <Text color="#6B7280">→</Text>
-        <Text color="#22C55E" bold>v{result.remoteVersion}</Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text color="#D1D5DB">Installer la mise à jour ? </Text>
-        <Text color="#22C55E" bold>[O]</Text>
-        <Text color="#D1D5DB"> oui  </Text>
-        <Text color="#EF4444" bold>[N]</Text>
-        <Text color="#D1D5DB"> non (continuer sans mettre à jour)</Text>
-      </Box>
-    </Box>
-  );
-};
 
 // ─── Root component ────────────────────────────────────────────────────────────
 const Root: React.FC = () => {
   type Phase =
     | { phase: 'checkingUpdate' }
-    | { phase: 'confirmUpdate'; result: UpdateCheckResult }
-    | { phase: 'downloading'; result: UpdateCheckResult }
+    | { phase: 'downloading'; result: UpdateCheckResult; progress: string }
     | { phase: 'checkingLicense' }
     | { phase: 'licenseInvalid'; reason: string }
     | { phase: 'ready' };
@@ -136,12 +104,15 @@ const Root: React.FC = () => {
         return;
       }
 
-      // 1. Vérification update
+      // 1. Vérification update — auto si nouvelle version disponible
       try {
         const result = await checkForUpdate();
-        if (result.hasUpdate && result.remoteVersion) {
-          setState({ phase: 'confirmUpdate', result });
-          return; // attend la réponse de l'utilisateur
+        if (result.hasUpdate && result.remoteVersion && result.downloadUrl) {
+          setState({ phase: 'downloading', result, progress: 'Connexion...' });
+          await downloadAndApplyUpdate(result, (msg) => {
+            setState({ phase: 'downloading', result, progress: msg });
+          });
+          return; // process.exit(0) appelé dans downloadAndApplyUpdate
         }
       } catch { /* réseau indispo → on continue */ }
 
@@ -180,25 +151,23 @@ const Root: React.FC = () => {
     );
   }
 
-  // ── Confirmation mise à jour ──
-  if (state.phase === 'confirmUpdate') {
-    return (
-      <UpdateConfirmScreen
-        result={state.result}
-        onConfirm={() => setState({ phase: 'downloading', result: state.result })}
-        onSkip={runLicenseCheck}
-      />
-    );
-  }
-
-  // ── Téléchargement en cours ──
+  // ── Mise à jour en cours ──
   if (state.phase === 'downloading') {
     return (
-      <UpdateScreen
-        result={state.result}
-        onDownload={(onProgress) => downloadAndApplyUpdate(state.result, onProgress)}
-        onSkip={runLicenseCheck}
-      />
+      <Box flexDirection="column" padding={2} gap={1}>
+        <Text>{nuxenGradient('NUXEN')}</Text>
+        <Text color="#7C3AED" bold>  Mise à jour automatique</Text>
+        <Box gap={2} marginTop={1}>
+          <Text color="#6B7280">v{state.result.currentVersion}</Text>
+          <Text color="#6B7280">→</Text>
+          <Text color="#22C55E" bold>v{state.result.remoteVersion}</Text>
+        </Box>
+        <Box marginTop={1} gap={1}>
+          <Text color="#38BDF8">↓</Text>
+          <Text color="#D1D5DB">{state.progress}</Text>
+        </Box>
+        <Text color="#6B7280">Relancement automatique à la fin...</Text>
+      </Box>
     );
   }
 
