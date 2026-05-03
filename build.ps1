@@ -57,7 +57,6 @@ Copy-Item $exeName "$tempDist\$exeName"
 $configJson = @{
   capsolver_api_key = "CAP-XXXXX_REMPLACER_PAR_VOTRE_CLE"
   default_webhook_url = "https://discord.com/api/webhooks/REMPLACER"
-  discord_user_id_to_ping = ""
   poll_status_max_minutes = 30
   request_delay_ms = 3000
   license_key = ""

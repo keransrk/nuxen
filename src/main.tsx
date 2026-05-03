@@ -42,6 +42,25 @@ const ExitScreen: React.FC<{ lines: string[]; isError?: boolean }> = ({ lines, i
 
 const nuxenGradient = gradient(['#9333EA', '#3B82F6']);
 
+const LicenseInvalidScreen: React.FC<{ reason: string }> = ({ reason }) => {
+  const { exit } = useApp();
+  useInput((_, key) => { if (key.return || key.escape || _.toLowerCase() === 'q') exit(); });
+  return (
+    <Box flexDirection="column" padding={2} gap={1}>
+      <Text>{nuxenGradient('NUXEN')}</Text>
+      <Text color="#EF4444" bold>⚠  Licence invalide</Text>
+      <Text color="#F87171">   {reason}</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="#9CA3AF">Pour obtenir une clé de licence, contacte l'admin.</Text>
+        <Text color="#9CA3AF">Édite ensuite license_key dans config.json puis relance.</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color="#6B7280">Appuie sur Q ou Entrée pour quitter.</Text>
+      </Box>
+    </Box>
+  );
+};
+
 // ─── Root component ────────────────────────────────────────────────────────────
 const Root: React.FC = () => {
   type Phase =
@@ -123,20 +142,7 @@ const Root: React.FC = () => {
 
   // Erreur licence
   if (state.phase === 'licenseInvalid') {
-    return (
-      <Box flexDirection="column" padding={2} gap={1}>
-        <Text>{nuxenGradient('NUXEN')}</Text>
-        <Text color="#EF4444" bold>⚠ Licence invalide</Text>
-        <Text color="#F87171">  {state.reason}</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text color="#9CA3AF">Pour obtenir une clé de licence, contacte l'admin.</Text>
-          <Text color="#9CA3AF">Édite ensuite license_key dans config.json puis relance.</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text color="#6B7280">Appuie sur Q ou Ctrl+C pour quitter.</Text>
-        </Box>
-      </Box>
-    );
+    return <LicenseInvalidScreen reason={state.reason} />;
   }
 
   // Erreur de chargement de config
