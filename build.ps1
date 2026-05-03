@@ -37,25 +37,9 @@ bun build src/main.tsx `
 
 Write-Host "$exeName compile (v$version)" -ForegroundColor Green
 
-# Compression UPX
-$upxPath = $null
-$upxSearch = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Filter "upx.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($upxSearch) { $upxPath = $upxSearch.FullName }
-if (-not $upxPath) {
-  $upxCmd = Get-Command upx -ErrorAction SilentlyContinue
-  if ($upxCmd) { $upxPath = $upxCmd.Source }
-}
-
-if ($upxPath) {
-  Start-Sleep -Seconds 2
-  $sizeBefore = [math]::Round((Get-Item $exeName).Length / 1MB, 1)
-  Write-Host "Compression UPX ($sizeBefore MB)..." -ForegroundColor Yellow
-  & $upxPath --best $exeName
-  $sizeAfter = [math]::Round((Get-Item $exeName).Length / 1MB, 1)
-  Write-Host "Compresse : $sizeBefore MB -> $sizeAfter MB" -ForegroundColor Green
-} else {
-  Write-Host "UPX non trouve - exe non compresse" -ForegroundColor Yellow
-}
+# Compression UPX desactivee : les executables UPX sont souvent bloques par Windows Defender
+# La taille sera ~113MB mais sans faux positif antivirus
+Write-Host "UPX desactive (evite les blocages Windows Defender)" -ForegroundColor Gray
 
 # ─── Creer le zip de distribution ────────────────────────────────────────────
 Write-Host "Creation du zip de distribution $zipName..." -ForegroundColor Yellow
