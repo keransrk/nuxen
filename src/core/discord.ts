@@ -3,7 +3,7 @@ import type { BasketResult } from './purchaseInit.js';
 import type { TmCookies } from './cookies.js';
 import type { EventInfo } from './eventResolver.js';
 
-const NUXEN_COLOR = 0x7C3AED; // violet
+const NUXEN_COLOR = 0x7C3AED;
 
 const formatDate = (iso: string | null | undefined, fallback = 'N/A'): string => {
   if (!iso) return fallback;
@@ -44,48 +44,47 @@ export const sendDiscordNotification = async (
   const item = basket.items?.[0];
   const sub = item?.subEventBasketDto?.[0];
   const tickets = sub?.tickets ?? [];
-  const title = item?.title ?? '├ëv├®nement';
+  const title = item?.title ?? 'Evenement';
 
-  // Places description
   const placesDesc = tickets.length > 0
-    ? tickets.map(t => `**${t.llgzone}** ÔÇö Rang ${t.rgplac} Si├¿ge ${t.numplac} (${t.llcsect})`).join('\n')
-    : 'Non num├®rot├® / automatique';
+    ? tickets.map(t => `**${t.llgzone}** \u2014 Rang ${t.rgplac} Si\u00e8ge ${t.numplac} (${t.llcsect})`).join('\n')
+    : 'Non num\u00e9rot\u00e9 / automatique';
 
-  // Date de l'├®v├®nement (startDate du basket ou dateSeance de la grille tarifaire)
   const eventDateIso = item?.startDate || seanceDateIso || null;
   const eventDateStr = formatDate(eventDateIso);
 
-  // Expiration du panier (TM = 8 minutes apr├¿s cr├®ation)
   const cartCreatedAt = new Date(basket.date);
   const expiresAt = basket.expirationDate
     ? new Date(basket.expirationDate)
     : new Date(cartCreatedAt.getTime() + 8 * 60 * 1000);
   const expiresStr = formatTime(expiresAt.toISOString());
 
-  // Contigu├½ (override par parametre, sinon depuis basket)
   const contiguousFlag = isContiguous ?? !item?.warningNoContiguousTickets;
-  const contiguous = contiguousFlag ? 'Ô£ô Contigu├½s' : 'ÔÜá Non contigu├½s';
+  const contiguous = contiguousFlag
+    ? '\u2705 Contigu\u00ebs'
+    : '\u26a0\ufe0f Non contigu\u00ebs';
 
   const openUrl = sessionUrl || `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
   const ping = userIdToPing ? `<@${userIdToPing}> ` : '';
-  const content = `${ping}­ƒÄƒ´©Å **PANIER CR├ë├ë ÔÇö ${title}**\n­ƒöù **${openUrl}**`;
+
+  const content = `${ping}\ud83c\udfaf **PANIER CR\u00c9\u00c9 \u2014 ${title}**\n\ud83d\udd17 **${openUrl}**`;
 
   const embed = {
-    title: `Ô£à Panier #${basket.id} ÔÇö ${basket.price}Ôé¼`,
+    title: `\u2705 Panier #${basket.id} \u2014 ${basket.price}\u20ac`,
     color: NUXEN_COLOR,
-    description: `[­ƒæë Ouvrir le panier (expire ├á ${expiresStr})](${openUrl})`,
+    description: `[\ud83c\udfab Ouvrir le panier (expire \u00e0 ${expiresStr})](${openUrl})`,
     fields: [
-      { name: '­ƒÄÁ Artiste', value: title, inline: true },
-      { name: '­ƒîÉ Proxy', value: proxyLabel, inline: true },
-      { name: '­ƒÆÂ Prix total', value: `**${basket.price}Ôé¼**`, inline: true },
-      { name: '­ƒôà Date ├®v├®nement', value: eventDateStr, inline: false },
-      { name: 'ÔÅ░ Expiration panier', value: expiresStr, inline: true },
-      { name: '­ƒÄƒ´©Å Cat├®gorie', value: sub?.llgcatpl ?? 'N/A', inline: true },
-      { name: '­ƒöó Quantit├®', value: String(tickets.length || 1), inline: true },
-      { name: '­ƒ¬æ Places', value: placesDesc, inline: false },
-      { name: '­ƒöù Contigu├½s', value: contiguous, inline: true },
-      { name: '­ƒåö Basket ID', value: String(basket.id), inline: true },
-      { name: '­ƒöù URL Panier', value: openUrl, inline: false },
+      { name: '\ud83c\udfb5 Artiste',          value: title,                          inline: true },
+      { name: '\ud83c\udf10 Proxy',             value: proxyLabel,                     inline: true },
+      { name: '\ud83d\udcb0 Prix total',         value: `**${basket.price}\u20ac**`,    inline: true },
+      { name: '\ud83d\udcc5 Date \u00e9v\u00e9nement', value: eventDateStr,            inline: false },
+      { name: '\u23f1\ufe0f Expiration panier', value: expiresStr,                     inline: true },
+      { name: '\ud83c\udfaf Cat\u00e9gorie',    value: sub?.llgcatpl ?? 'N/A',         inline: true },
+      { name: '\ud83d\udd22 Quantit\u00e9',     value: String(tickets.length || 1),    inline: true },
+      { name: '\ud83d\udcba Places',             value: placesDesc,                     inline: false },
+      { name: '\ud83d\udd17 Contigu\u00ebs',    value: contiguous,                     inline: true },
+      { name: '\ud83d\uded2 Basket ID',         value: String(basket.id),              inline: true },
+      { name: '\ud83d\udd17 URL Panier',        value: openUrl,                        inline: false },
     ],
     timestamp: new Date().toISOString(),
     footer: { text: 'NUXEN Bot' },
