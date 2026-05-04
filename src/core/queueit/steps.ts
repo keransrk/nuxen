@@ -110,29 +110,11 @@ export const runQueueIt = async (
     'Cookie': visitorSessionRaw,
   };
 
-  // -- STEP 3: GET reCAPTCHA challenge --
-  qlog('  [Q2] GET reCAPTCHA challenge...', 'step');
-  const rcChallengeRes = await queueClient.post(
-    `${queueItBase}/challengeapi/recaptcha/challenge/`,
-    null,
-    {
-      headers: challengeRequestHeaders,
-      skipDelay: true,
-    } as any
-  );
-
-  const rcChallenge = rcChallengeRes.data;
-  if (!rcChallenge?.sessionId) throw new Error(`Queue-it recaptcha challenge failed: ${JSON.stringify(rcChallenge)}`);
-  const rcChallengeDetails = rcChallenge.challengeDetails ?? '';
-  const rcSiteKey = rcChallenge.siteKey || '6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV';
-  qlog(`  [info] rcChallenge keys: ${Object.keys(rcChallenge || {}).join(', ')}`, 'info');
-
-  // -- STEP 4: Solve reCAPTCHA v2 --
-  // Passer le proxy pour que Capsolver solve depuis la même IP que les verify PoW
-  // Sans ça, rcSessionInfo.sourceIp = IP Capsolver ≠ powSessionInfo.sourceIp = IP proxy → challengeFailed
-  qlog('  [Q3] Resolution reCAPTCHA v2 - Capsolver (via proxy)...', 'step');
-  const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId, proxyUrl);
-  qlog('  [OK] reCAPTCHA v2 resolu', 'success');
+  // -- STEPS Q2-Q9: Challenge loop (retried on IP mismatch or challengeFailed) --
+  // Oxylabs residential proxies can assign different IPs on separate TCP connections.
+  // Queue-it requires rcSessionInfo.sourceIp === powSessionInfo.sourceIp at enqueue.
+  // We retry the full challenge sequence until IPs match and enqueue succeeds.
+  const MAX_CHALLENGE_RETRIES = 6;
 
   const UA_STATS = {
     Browser: 'Chrome',
@@ -143,145 +125,182 @@ export const runQueueIt = async (
     Screen: '1920x1080',
   };
 
-  // -- STEP 5: Verify reCAPTCHA --
-  qlog('  [Q4] POST verify reCAPTCHA...', 'step');
-  const rcVerifyRes = await queueClient.post(
-    `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
-    JSON.stringify({
-      challengeType: 'recaptcha',
-      sessionId: rcChallenge.sessionId,
-      challengeDetails: rcChallengeDetails,
-      solution: recaptchaToken,
-      stats: { ...UA_STATS, Duration: 2000 },
-      customerId,
-      eventId,
-      version: 6,
-    }),
-    { headers: challengeHeaders, skipDelay: true } as any
-  );
+  let queueId: string | null = null;
+  let enqueueResData: any = null;
+  let enqueueResHeaders: Record<string, any> = {};
 
-  const rcVerify = rcVerifyRes.data;
-  qlog(`  [info] rcVerify status=${rcVerifyRes.status} keys: ${Object.keys(rcVerify || {}).join(', ')}`, 'info');
-  if (rcVerifyRes.status >= 400 || rcVerify?.challengeFailed) {
-    throw new Error(`Queue-it: reCAPTCHA verify failed (${rcVerifyRes.status}): ${JSON.stringify(rcVerify).slice(0, 300)}`);
+  for (let attempt = 1; attempt <= MAX_CHALLENGE_RETRIES; attempt++) {
+    const attemptSuffix = attempt > 1 ? ` (tentative ${attempt}/${MAX_CHALLENGE_RETRIES})` : '';
+
+    // -- Q2: GET reCAPTCHA challenge --
+    qlog(`  [Q2] GET reCAPTCHA challenge${attemptSuffix}...`, 'step');
+    const rcChallengeRes = await queueClient.post(
+      `${queueItBase}/challengeapi/recaptcha/challenge/`,
+      null,
+      { headers: challengeRequestHeaders, skipDelay: true } as any
+    );
+
+    const rcChallenge = rcChallengeRes.data;
+    if (!rcChallenge?.sessionId) throw new Error(`Queue-it recaptcha challenge failed: ${JSON.stringify(rcChallenge)}`);
+    const rcChallengeDetails = rcChallenge.challengeDetails ?? '';
+    const rcSiteKey = rcChallenge.siteKey || '6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV';
+    if (attempt === 1) qlog(`  [info] rcChallenge keys: ${Object.keys(rcChallenge || {}).join(', ')}`, 'info');
+
+    // -- Q3: Solve reCAPTCHA v2 via proxy --
+    qlog('  [Q3] Resolution reCAPTCHA v2 - Capsolver (via proxy)...', 'step');
+    const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId, proxyUrl);
+    qlog('  [OK] reCAPTCHA v2 resolu', 'success');
+
+    // -- Q4: Verify reCAPTCHA --
+    qlog('  [Q4] POST verify reCAPTCHA...', 'step');
+    const rcVerifyRes = await queueClient.post(
+      `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
+      JSON.stringify({
+        challengeType: 'recaptcha',
+        sessionId: rcChallenge.sessionId,
+        challengeDetails: rcChallengeDetails,
+        solution: recaptchaToken,
+        stats: { ...UA_STATS, Duration: 2000 },
+        customerId,
+        eventId,
+        version: 6,
+      }),
+      { headers: challengeHeaders, skipDelay: true } as any
+    );
+
+    const rcVerify = rcVerifyRes.data;
+    if (attempt === 1) qlog(`  [info] rcVerify status=${rcVerifyRes.status} keys: ${Object.keys(rcVerify || {}).join(', ')}`, 'info');
+    if (rcVerifyRes.status >= 400 || rcVerify?.challengeFailed) {
+      throw new Error(`Queue-it: reCAPTCHA verify failed (${rcVerifyRes.status}): ${JSON.stringify(rcVerify).slice(0, 300)}`);
+    }
+    const recaptchaSessionInfo = rcVerify?.sessionInfo
+      ?? rcVerify?.challengeSession
+      ?? rcVerify?.session
+      ?? rcVerify?.challengeSessionInfo;
+    if (!recaptchaSessionInfo) {
+      qlog(`  [!] sessionInfo absent de rcVerify - body: ${JSON.stringify(rcVerify).slice(0, 200)}`, 'warn');
+    }
+    const rcIP = recaptchaSessionInfo?.sourceIp;
+    qlog(`  [OK] reCAPTCHA verifie - IP: ${rcIP ?? '?'}`, 'success');
+
+    // -- Q5: GET PoW challenge --
+    qlog('  [Q5] GET ProofOfWork challenge...', 'step');
+    const powChallengeRes = await queueClient.post(
+      `${queueItBase}/challengeapi/pow/challenge/`,
+      null,
+      { headers: challengeRequestHeaders, skipDelay: true } as any
+    );
+
+    const powChallenge = powChallengeRes.data;
+    if (!powChallenge?.sessionId) throw new Error(`Queue-it PoW challenge failed: ${JSON.stringify(powChallenge)}`);
+    const powChallengeDetails = powChallenge.challengeDetails ?? '';
+    if (attempt === 1) qlog(`  [info] powChallenge keys: ${Object.keys(powChallenge || {}).join(', ')}`, 'info');
+    if (!powChallenge.function) throw new Error('Queue-it: PoW function body vide dans la reponse');
+    if (!powChallenge.parameters) throw new Error('Queue-it: PoW parameters manquants');
+    qlog('  [OK] PoW challenge recu', 'success');
+
+    // -- Q7: Solve PoW locally --
+    qlog(`  [Q7] Resolution PoW (runs=${powChallenge.parameters?.runs}, complexity=${powChallenge.parameters?.complexity})...`, 'step');
+    const { solutionEncoded, durationMs } = await solvePoW(powChallenge);
+    qlog(`  [OK] PoW resolu en ${durationMs}ms`, 'success');
+
+    // -- Q8: Verify PoW --
+    qlog('  [Q8] POST verify PoW...', 'step');
+    const powVerifyRes = await queueClient.post(
+      `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
+      JSON.stringify({
+        challengeType: 'proofofwork',
+        sessionId: powChallenge.sessionId,
+        challengeDetails: powChallengeDetails,
+        solution: solutionEncoded,
+        stats: { ...UA_STATS, Duration: durationMs },
+        customerId,
+        eventId,
+        version: 6,
+      }),
+      { headers: challengeHeaders, skipDelay: true } as any
+    );
+
+    const powVerify = powVerifyRes.data;
+    if (attempt === 1) qlog(`  [info] powVerify status=${powVerifyRes.status} keys: ${Object.keys(powVerify || {}).join(', ')}`, 'info');
+    if (powVerifyRes.status >= 400 || powVerify?.challengeFailed) {
+      throw new Error(`Queue-it: PoW verify failed (${powVerifyRes.status}): ${JSON.stringify(powVerify).slice(0, 300)}`);
+    }
+    const powSessionInfo = powVerify?.sessionInfo
+      ?? powVerify?.challengeSession
+      ?? powVerify?.session
+      ?? powVerify?.challengeSessionInfo;
+    if (!powSessionInfo) {
+      qlog(`  [!] sessionInfo absent de powVerify - body: ${JSON.stringify(powVerify).slice(0, 200)}`, 'warn');
+    }
+    const powIP = powSessionInfo?.sourceIp;
+    qlog(`  [OK] PoW verifie - IP: ${powIP ?? '?'}`, 'success');
+
+    // -- IP match check: bail early without calling enqueue --
+    const ipMatch = rcIP && powIP && rcIP === powIP;
+    if (!ipMatch) {
+      qlog(`  [!] IP mismatch (rc=${rcIP} pow=${powIP}) - retry challenge...`, 'warn');
+      if (attempt < MAX_CHALLENGE_RETRIES) continue;
+      throw new Error(`Queue-it: IP mismatch persistant apres ${MAX_CHALLENGE_RETRIES} tentatives`);
+    }
+    qlog(`  [info] IP match OK: ${rcIP}`, 'info');
+
+    // -- Q9: POST enqueue --
+    qlog('  [Q9] POST enqueue - entree dans la file...', 'step');
+    const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
+      + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
+      + `&t=${encodeURIComponent(targetUrl)}`;
+
+    const enqueueBody = {
+      challengeSessions: [recaptchaSessionInfo, powSessionInfo].filter(s => s != null),
+      layoutName: 'Generic TMFR and partners 2024',
+      customUrlParams: '',
+      targetUrl,
+      CustomDataEnqueue: null,
+      QueueitEnqueueToken: enqueueToken || null,
+      Referrer: '',
+    };
+
+    const enqueueRes = await queueClient.post(enqueueUrl, JSON.stringify(enqueueBody), {
+      headers: {
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'fr-FR',
+        'Content-Type': 'application/json',
+        Origin: queueItBase,
+        Referer: queueItUrl,
+        'x-requested-with': 'XMLHttpRequest',
+        'x-queueit-qpage-referral': '',
+        'User-Agent': UA,
+        'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cookie': visitorSessionRaw,
+      },
+      skipDelay: true,
+    } as any);
+
+    enqueueResData = enqueueRes.data;
+    enqueueResHeaders = enqueueRes.headers as Record<string, any>;
+    queueClient.cookieJar.ingest(enqueueRes.headers['set-cookie']);
+    qlog(`  [info] enqueue response: ${JSON.stringify(enqueueResData).slice(0, 300)}`, 'info');
+
+    if (enqueueResData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
+
+    if (enqueueResData?.challengeFailed) {
+      qlog(`  [!] challengeFailed malgre IP match - retry ${attempt}/${MAX_CHALLENGE_RETRIES}...`, 'warn');
+      if (attempt < MAX_CHALLENGE_RETRIES) continue;
+      throw new Error(`Queue-it: challengeFailed persistant apres ${MAX_CHALLENGE_RETRIES} tentatives: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
+    }
+
+    if (!enqueueResData?.queueId) {
+      throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueResData).slice(0, 300)}`);
+    }
+
+    queueId = enqueueResData.queueId;
+    break; // Succès
   }
-  const recaptchaSessionInfo = rcVerify?.sessionInfo
-    ?? rcVerify?.challengeSession
-    ?? rcVerify?.session
-    ?? rcVerify?.challengeSessionInfo;
-  if (!recaptchaSessionInfo) {
-    qlog(`  [!] sessionInfo absent de rcVerify - body: ${JSON.stringify(rcVerify).slice(0, 200)}`, 'warn');
-  } else {
-    qlog(`  [info] rcSessionInfo.sourceIp=${recaptchaSessionInfo.sourceIp}`, 'info');
-  }
-  qlog('  [OK] reCAPTCHA verifie par Queue-it', 'success');
 
-  // -- STEP 6: GET PoW challenge --
-  qlog('  [Q5] GET ProofOfWork challenge...', 'step');
-  const powChallengeRes = await queueClient.post(
-    `${queueItBase}/challengeapi/pow/challenge/`,
-    null,
-    { headers: challengeRequestHeaders, skipDelay: true } as any
-  );
-
-  const powChallenge = powChallengeRes.data;
-  if (!powChallenge?.sessionId) throw new Error(`Queue-it PoW challenge failed: ${JSON.stringify(powChallenge)}`);
-  const powChallengeDetails = powChallenge.challengeDetails ?? '';
-  qlog(`  [info] powChallenge keys: ${Object.keys(powChallenge || {}).join(', ')}`, 'info');
-
-  if (!powChallenge.function) throw new Error('Queue-it: PoW function body vide dans la reponse');
-  if (!powChallenge.parameters) throw new Error('Queue-it: PoW parameters manquants');
-  qlog('  [OK] PoW challenge recu', 'success');
-
-  // -- STEP 7: Solve PoW locally --
-  // Queue-it response: { sessionId, function: "...", parameters: { type, input, runs, complexity } }
-  // The function body defines run(type, input, runs, complexity, isAsync)
-  qlog(`  [Q7] Resolution PoW (runs=${powChallenge.parameters?.runs}, complexity=${powChallenge.parameters?.complexity})...`, 'step');
-  const { solutionEncoded, durationMs } = await solvePoW(powChallenge);
-  qlog(`  [OK] PoW resolu en ${durationMs}ms`, 'success');
-
-  // -- STEP 8: Verify PoW --
-  qlog('  [Q8] POST verify PoW...', 'step');
-  const powVerifyRes = await queueClient.post(
-    `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
-    JSON.stringify({
-      challengeType: 'proofofwork',
-      sessionId: powChallenge.sessionId,
-      challengeDetails: powChallengeDetails,
-      solution: solutionEncoded,
-      stats: { ...UA_STATS, Duration: durationMs },
-      customerId,
-      eventId,
-      version: 6,
-    }),
-    { headers: challengeHeaders, skipDelay: true } as any
-  );
-
-  const powVerify = powVerifyRes.data;
-  qlog(`  [info] powVerify status=${powVerifyRes.status} keys: ${Object.keys(powVerify || {}).join(', ')}`, 'info');
-  if (powVerifyRes.status >= 400 || powVerify?.challengeFailed) {
-    throw new Error(`Queue-it: PoW verify failed (${powVerifyRes.status}): ${JSON.stringify(powVerify).slice(0, 300)}`);
-  }
-  const powSessionInfo = powVerify?.sessionInfo
-    ?? powVerify?.challengeSession
-    ?? powVerify?.session
-    ?? powVerify?.challengeSessionInfo;
-  if (!powSessionInfo) {
-    qlog(`  [!] sessionInfo absent de powVerify - body: ${JSON.stringify(powVerify).slice(0, 200)}`, 'warn');
-  } else {
-    qlog(`  [info] powSessionInfo.sourceIp=${powSessionInfo.sourceIp}`, 'info');
-  }
-  qlog('  [OK] PoW verifie par Queue-it', 'success');
-
-  // -- STEP 9: POST enqueue --
-  qlog('  [Q9] POST enqueue - entree dans la file...', 'step');
-  // V2 format: enqueueToken goes in BODY as QueueitEnqueueToken, NOT in URL
-  const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
-    + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
-    + `&t=${encodeURIComponent(targetUrl)}`;
-
-  const enqueueBody = {
-    challengeSessions: [recaptchaSessionInfo, powSessionInfo].filter(s => s != null),
-    layoutName: 'Generic TMFR and partners 2024',
-    customUrlParams: '',
-    targetUrl,
-    CustomDataEnqueue: null,
-    QueueitEnqueueToken: enqueueToken || null,
-    Referrer: '',
-  };
-  qlog(`  [info] challengeSessions count: ${enqueueBody.challengeSessions.length}`, 'info');
-  qlog(`  [info] enqueueToken: ${enqueueToken ? enqueueToken.slice(0, 60) + '...' : '(vide)'}`, 'info');
-  qlog(`  [info] rcIP=${recaptchaSessionInfo?.sourceIp} powIP=${powSessionInfo?.sourceIp} match=${recaptchaSessionInfo?.sourceIp === powSessionInfo?.sourceIp}`, 'info');
-
-  const enqueueRes = await queueClient.post(enqueueUrl, JSON.stringify(enqueueBody), {
-    headers: {
-      Accept: 'application/json, text/javascript, */*; q=0.01',
-      'Accept-Language': 'fr-FR',
-      'Content-Type': 'application/json',
-      Origin: queueItBase,
-      Referer: queueItUrl,
-      'x-requested-with': 'XMLHttpRequest',
-      'x-queueit-qpage-referral': '',
-      'User-Agent': UA,
-      'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'Cookie': visitorSessionRaw,
-    },
-    skipDelay: true,
-  } as any);
-
-  const enqueueData = enqueueRes.data;
-  queueClient.cookieJar.ingest(enqueueRes.headers['set-cookie']);
-
-  qlog(`  [info] enqueue response: ${JSON.stringify(enqueueData).slice(0, 400)}`, 'info');
-
-  if (enqueueData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
-  if (!enqueueData?.queueId) {
-    throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueData).slice(0, 300)}`);
-  }
-
-  const queueId: string = enqueueData.queueId;
+  if (!queueId) throw new Error('Queue-it: echec challenge apres toutes les tentatives');
   qlog(`  [OK] Enqueue! ID=${queueId.slice(0, 8)}... - polling toutes les 10s`, 'success');
 
   // -- STEP 10: Poll /status until redirect --
@@ -289,7 +308,7 @@ export const runQueueIt = async (
   const sets = Date.now().toString();
   const layoutName = 'Generic TMFR and partners 2024';
   let layoutVersion = 179115981772;
-  let queueItemHeader = enqueueRes.headers['x-queueit-queueitem-v2'] || '';
+  let queueItemHeader = (enqueueResHeaders['x-queueit-queueitem-v2'] as string) || '';
   let pollCount = 0;
   const POLL_INTERVAL_MS = 10000;
   const maxPolls = 6 * 60; // 1h max

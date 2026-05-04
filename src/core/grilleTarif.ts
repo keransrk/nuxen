@@ -187,7 +187,7 @@ export const pickRandomPlace = (
     if (matches.length === 0) {
       // Liste des zones et catégories disponibles pour aider au debug
       const catList = cats.map(c => `${c.codCatPl}/${c.llgCatPl}`).join(', ');
-      const zoneList = cats.flatMap(c => (c.zones ?? []).map(z => z.idzone)).filter(Boolean).join(', ');
+      const zoneList = cats.flatMap(c => (c.zones ?? []).map(z => `${z.idzone}(${z.llczone})`)).filter(Boolean).join(', ');
       throw new Error(
         `Section "${filters.section}" introuvable. Catégories: [${catList}] | Zones: [${zoneList}]`
       );
