@@ -13,12 +13,12 @@ const LOG_COLORS: Record<LogLevel, string> = {
 };
 
 const LOG_ICONS: Record<LogLevel, string> = {
-  step:    'ÔåÆ',
-  success: 'Ô£ô',
-  error:   'Ô£ù',
-  warn:    'ÔÜá',
-  queue:   'ÔÅ│',
-  info:    '┬À',
+  step:    '>>',
+  success: '[OK]',
+  error:   '[X]',
+  warn:    '[!]',
+  queue:   '[Q]',
+  info:    '  ',
 };
 
 const tsLabel = (ts: number): string => {
@@ -61,7 +61,7 @@ export const TasksDashboard: React.FC<TasksDashboardProps> = ({
           <Box key={t.id} marginRight={2}>
             <Text color="#4B5563">[</Text>
             <Text color="#7C3AED" bold>{String(t.id + 1).padStart(2, '0')}</Text>
-            <Text color="#4B5563">┬À</Text>
+            <Text color="#4B5563">|</Text>
             <Text color="#6B7280">{t.proxyLabel}</Text>
             <Text color="#4B5563">] </Text>
             <Text>{col(icon)}</Text>
@@ -102,11 +102,11 @@ export const TasksDashboard: React.FC<TasksDashboardProps> = ({
 
       <Box borderStyle="single" borderColor="#1F2937" flexDirection="column" paddingX={1}>
         {hiddenAbove > 0 && (
-          <Text color="#4B5563" dimColor>  Ôåæ {hiddenAbove} ligne{hiddenAbove > 1 ? 's' : ''} au-dessus</Text>
+          <Text color="#4B5563" dimColor>  ^ {hiddenAbove} ligne{hiddenAbove > 1 ? 's' : ''} au-dessus</Text>
         )}
 
         {visible.length === 0 && (
-          <Text color="#4B5563">En attente des premi├¿res ├®tapes...</Text>
+          <Text color="#4B5563">En attente des premieres etapes...</Text>
         )}
 
         {visible.map((item, i) => (
@@ -125,7 +125,7 @@ export const TasksDashboard: React.FC<TasksDashboardProps> = ({
         ))}
 
         {hiddenBelow > 0 && (
-          <Text color="#4B5563" dimColor>  Ôåô {hiddenBelow} ligne{hiddenBelow > 1 ? 's' : ''} en-dessous</Text>
+          <Text color="#4B5563" dimColor>  v {hiddenBelow} ligne{hiddenBelow > 1 ? 's' : ''} en-dessous</Text>
         )}
       </Box>
     </Box>

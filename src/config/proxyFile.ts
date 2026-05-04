@@ -37,6 +37,8 @@ export class ProxyPool {
     const status: number = err.status ?? err.statusCode ?? 0;
     // Codes reseau = proxy mort ou bloque
     if (['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(code)) return true;
+    // ECONNABORTED = axios timeout (proxy trop lent = rotation)
+    if (code === 'ECONNABORTED' && msg.includes('timeout')) return true;
     // 407 = erreur auth proxy, 429 = rate limit
     if (status === 407 || status === 429) return true;
     // Messages explicites
@@ -62,16 +64,34 @@ export const loadProxyFile = (filename: string): ProxyEntry[] => {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
 
-    // Si la ligne commence deja par http:// ou https://, on garde tel quel
-    // Sinon on ajoute http:// automatiquement
-    let url = line;
-    if (!/^https?:\/\//i.test(url)) {
-      url = 'http://' + url;
+    let url = '';
+
+    // Detect format:
+    // 1. Standard: http://user:pass@host:port  (already has scheme)
+    // 2. user:pass@host:port                   (PacketStream style)
+    // 3. host:port:user:pass                   (Oxylabs / some providers)
+
+    if (/^https?:\/\//i.test(line)) {
+      // Already a full URL
+      url = line;
+    } else if (line.includes('@')) {
+      // user:pass@host:port
+      url = 'http://' + line;
+    } else {
+      // Try host:port:user:pass (split on ':' gives 4 parts)
+      const parts = line.split(':');
+      if (parts.length === 4) {
+        const [host, port, user, pass] = parts;
+        url = `http://${user}:${pass}@${host}:${port}`;
+      } else {
+        // Fallback: prepend http://
+        url = 'http://' + line;
+      }
     }
 
-    // Extraction du label (session ID ou suffixe)
-    const sessionMatch = line.match(/session-(\d+)/);
-    const label = sessionMatch ? `ÔÇª${sessionMatch[1].slice(-6)}` : line.slice(-12);
+    // Label: prefer session/sessid suffix, fallback to last 8 chars of URL
+    const sessMatch = line.match(/sess(?:id)?[-_](\d+)/i);
+    const label = sessMatch ? `*${sessMatch[1].slice(-6)}` : url.slice(-10);
 
     proxies.push({ url, label });
   }

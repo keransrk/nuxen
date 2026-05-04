@@ -1,23 +1,22 @@
 import { HttpClient } from '../../utils/http.js';
-import { sleep, randomInt } from '../../utils/random.js';
+import { sleep } from '../../utils/random.js';
 import { logger } from '../../utils/logger.js';
 import { store } from '../store.js';
 import type { LogLevel } from '../store.js';
 import { solveRecaptchaV2 } from '../recaptcha.js';
 import { solvePoW } from './pow.js';
-import { CookieJar } from '../../utils/cookieJar.js';
 import crypto from 'crypto';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
 
 export interface QueueItResult {
-  queueItCookie: string;   // QueueITAccepted-... cookie
-  queueittoken: string;    // token from redirectUrl
-  redirectUrl: string;     // final TM URL with queueittoken
+  queueItCookie: string;
+  queueittoken: string;
+  redirectUrl: string;
 }
 
 export interface TaskUpdate {
-  queuePosition?: string;  // "34 personnes devant toi"
+  queuePosition?: string;
   forecastStatus?: string;
 }
 
@@ -29,7 +28,6 @@ export const runQueueIt = async (
   onUpdate?: (update: TaskUpdate) => void,
   stopSignal?: { stopped: boolean }
 ): Promise<QueueItResult> => {
-  // Client Queue-it avec proxy
   const queueClient = new HttpClient({ proxyUrl, delayMs: 3000 });
 
   const qlog = (msg: string, level: LogLevel = 'queue') => {
@@ -37,7 +35,7 @@ export const runQueueIt = async (
     logger.info(taskId, msg);
   };
 
-  // ÔöÇÔöÇÔöÇ STEP 1: Parser l'URL Queue-it ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // -- STEP 1: Parse Queue-it URL --
   const urlObj = new URL(queueItUrl);
   const enqueueToken = urlObj.searchParams.get('enqueuetoken') || '';
   const eventId = urlObj.searchParams.get('e') || '';
@@ -46,7 +44,7 @@ export const runQueueIt = async (
 
   qlog(`  Queue-it: event=${eventId}`, 'info');
 
-  // ÔöÇÔöÇÔöÇ STEP 2: GET page Queue-it ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // -- STEP 2: GET Queue-it page --
   qlog('  [Q1] GET page Queue-it...', 'step');
   const pageRes = await queueClient.get(queueItUrl, {
     headers: {
@@ -57,24 +55,25 @@ export const runQueueIt = async (
 
   const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
 
-  // Extract visitorSession cookie
   queueClient.cookieJar.ingest(pageRes.headers['set-cookie']);
   const visitorSessionRaw = Object.entries(queueClient.cookieJar.toObject())
     .filter(([k]) => k.toLowerCase().includes('visitorsession'))
     .map(([k, v]) => `${k}=${v}`)
     .join('; ');
 
-  // Extract challengeApiChecksumHash
   const hashMatch = html.match(/challengeApiChecksumHash\s*[=:]\s*["']([^"']+)["']/);
   const challengeHash = hashMatch ? hashMatch[1] : '';
-  if (!challengeHash) qlog('  ÔÜá challengeHash introuvable', 'warn');
-  else qlog(`  Ô£ô hash extrait`, 'success');
+  if (!challengeHash) qlog('  [!] challengeHash introuvable', 'warn');
+  else qlog(`  [OK] hash extrait: ${challengeHash.slice(0, 20)}...`, 'success');
+
+  qlog(`  [info] enqueueToken: ${enqueueToken ? enqueueToken.slice(0, 60) + '...' : '(vide)'}`, 'info');
 
   const queueItBase = `https://${customerId}.queue-it.net`;
 
-  const challengeHeaders = {
-    Accept: 'application/json, text/javascript, */*; q=0.01',
-    'Content-Type': 'application/json',
+  // Headers for the challenge POST requests (exactly as browser sends)
+  const challengeRequestHeaders = {
+    Accept: '*/*',
+    'Accept-Language': 'fr-FR',
     Origin: queueItBase,
     Referer: queueItUrl,
     'User-Agent': UA,
@@ -84,123 +83,178 @@ export const runQueueIt = async (
     'x-queueit-challange-customerid': customerId,
     'x-queueit-challange-eventid': eventId,
     'x-queueit-challange-hash': challengeHash,
+    'x-queueit-challange-reason': '1',
+    'x-queueit-challange-ruleid': '',
+    'x-queueit-challange-rulename': '',
     'Cookie': visitorSessionRaw,
   };
 
-  // ÔöÇÔöÇÔöÇ STEP 3: GET reCAPTCHA challenge ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // Headers for XHR verify/enqueue requests
+  const challengeHeaders = {
+    Accept: 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'fr-FR',
+    'Content-Type': 'application/json',
+    Origin: queueItBase,
+    Referer: queueItUrl,
+    'User-Agent': UA,
+    'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'x-requested-with': 'XMLHttpRequest',
+    'x-queueit-challange-customerid': customerId,
+    'x-queueit-challange-eventid': eventId,
+    'x-queueit-challange-hash': challengeHash,
+    'x-queueit-challange-reason': '1',
+    'x-queueit-challange-ruleid': '',
+    'x-queueit-challange-rulename': '',
+    'Cookie': visitorSessionRaw,
+  };
+
+  // -- STEP 3: GET reCAPTCHA challenge --
   qlog('  [Q2] GET reCAPTCHA challenge...', 'step');
-  // Nouvelle URL : /challengeapi/recaptcha/challenge/ (sans customerId/eventId dans le path)
-  // Le customerId/eventId sont dans les headers x-queueit-challange-*
   const rcChallengeRes = await queueClient.post(
     `${queueItBase}/challengeapi/recaptcha/challenge/`,
     null,
     {
-      headers: {
-        ...challengeHeaders,
-        'x-requested-with': 'XMLHttpRequest',
-        'Content-Type': 'application/json',
-      }
-    }
+      headers: challengeRequestHeaders,
+      skipDelay: true,
+    } as any
   );
 
   const rcChallenge = rcChallengeRes.data;
   if (!rcChallenge?.sessionId) throw new Error(`Queue-it recaptcha challenge failed: ${JSON.stringify(rcChallenge)}`);
   const rcChallengeDetails = rcChallenge.challengeDetails ?? '';
   const rcSiteKey = rcChallenge.siteKey || '6LcvL3UrAAAAAO_9u8Seiuf-I6F_tP_jSS-zndXV';
+  qlog(`  [info] rcChallenge keys: ${Object.keys(rcChallenge || {}).join(', ')}`, 'info');
 
-  // ÔöÇÔöÇÔöÇ STEP 4: R├®soudre reCAPTCHA v2 ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  qlog('  [Q3] R├®solution reCAPTCHA v2 ÔÇö Capsolver...', 'step');
+  // -- STEP 4: Solve reCAPTCHA v2 --
+  qlog('  [Q3] Resolution reCAPTCHA v2 - Capsolver...', 'step');
   const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId);
-  qlog('  Ô£ô reCAPTCHA v2 r├®solu', 'success');
+  qlog('  [OK] reCAPTCHA v2 resolu', 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 5: V├®rifier reCAPTCHA ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  const UA_STATS = {
+    Browser: 'Chrome',
+    BrowserVersion: '147',
+    Os: 'Windows',
+    OsVersion: '10',
+    UserAgent: UA,
+    Screen: '1920x1080',
+  };
+
+  // -- STEP 5: Verify reCAPTCHA --
   qlog('  [Q4] POST verify reCAPTCHA...', 'step');
   const rcVerifyRes = await queueClient.post(
     `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
     JSON.stringify({
-      challengeType: 'Recaptcha',
+      challengeType: 'recaptcha',
       sessionId: rcChallenge.sessionId,
       challengeDetails: rcChallengeDetails,
       solution: recaptchaToken,
-      stats: {},
+      stats: { ...UA_STATS, Duration: 2000 },
       customerId,
       eventId,
       version: 6,
     }),
-    { headers: { ...challengeHeaders, 'x-requested-with': 'XMLHttpRequest' } }
+    { headers: challengeHeaders, skipDelay: true } as any
   );
 
   const rcVerify = rcVerifyRes.data;
-  if (rcVerify?.challengeFailed) throw new Error('Queue-it: reCAPTCHA verify failed');
-  const recaptchaSessionInfo = rcVerify?.sessionInfo;
-  qlog('  Ô£ô reCAPTCHA v├®rifi├® par Queue-it', 'success');
+  qlog(`  [info] rcVerify status=${rcVerifyRes.status} keys: ${Object.keys(rcVerify || {}).join(', ')}`, 'info');
+  if (rcVerifyRes.status >= 400 || rcVerify?.challengeFailed) {
+    throw new Error(`Queue-it: reCAPTCHA verify failed (${rcVerifyRes.status}): ${JSON.stringify(rcVerify).slice(0, 300)}`);
+  }
+  const recaptchaSessionInfo = rcVerify?.sessionInfo
+    ?? rcVerify?.challengeSession
+    ?? rcVerify?.session
+    ?? rcVerify?.challengeSessionInfo;
+  if (!recaptchaSessionInfo) {
+    qlog(`  [!] sessionInfo absent de rcVerify - body: ${JSON.stringify(rcVerify).slice(0, 200)}`, 'warn');
+  } else {
+    qlog(`  [info] rcSessionInfo.sourceIp=${recaptchaSessionInfo.sourceIp}`, 'info');
+  }
+  qlog('  [OK] reCAPTCHA verifie par Queue-it', 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 6: GET PoW challenge ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // -- STEP 6: GET PoW challenge --
   qlog('  [Q5] GET ProofOfWork challenge...', 'step');
-  // Nouvelle URL : /challengeapi/pow/challenge/ sans customerId/eventId dans le path
-  // La r├®ponse contient DIRECTEMENT la fonction JS (plus besoin d'un GET s├®par├®)
   const powChallengeRes = await queueClient.post(
     `${queueItBase}/challengeapi/pow/challenge/`,
     null,
-    { headers: { ...challengeHeaders, 'x-requested-with': 'XMLHttpRequest', 'Content-Type': 'application/json' } }
+    { headers: challengeRequestHeaders, skipDelay: true } as any
   );
 
   const powChallenge = powChallengeRes.data;
   if (!powChallenge?.sessionId) throw new Error(`Queue-it PoW challenge failed: ${JSON.stringify(powChallenge)}`);
   const powChallengeDetails = powChallenge.challengeDetails ?? '';
+  qlog(`  [info] powChallenge keys: ${Object.keys(powChallenge || {}).join(', ')}`, 'info');
 
-  // La fonction PoW est directement dans la r├®ponse (champ "function")
-  const functionBody: string = powChallenge.function ?? '';
-  if (!functionBody) throw new Error('Queue-it: PoW function body vide dans la r├®ponse');
-  qlog('  Ô£ô PoW challenge re├ºu', 'success');
+  if (!powChallenge.function) throw new Error('Queue-it: PoW function body vide dans la reponse');
+  if (!powChallenge.parameters) throw new Error('Queue-it: PoW parameters manquants');
+  qlog('  [OK] PoW challenge recu', 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 7b: R├®soudre PoW localement ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  qlog(`  [Q7] R├®solution PoW (runs=${powChallenge.runs}, complexity=${powChallenge.complexity})...`, 'step');
-  const { solutionEncoded, durationMs } = await solvePoW(powChallenge, functionBody);
-  qlog(`  Ô£ô PoW r├®solu en ${durationMs}ms`, 'success');
+  // -- STEP 7: Solve PoW locally --
+  // Queue-it response: { sessionId, function: "...", parameters: { type, input, runs, complexity } }
+  // The function body defines run(type, input, runs, complexity, isAsync)
+  qlog(`  [Q7] Resolution PoW (runs=${powChallenge.parameters?.runs}, complexity=${powChallenge.parameters?.complexity})...`, 'step');
+  const { solutionEncoded, durationMs } = await solvePoW(powChallenge);
+  qlog(`  [OK] PoW resolu en ${durationMs}ms`, 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 8: V├®rifier PoW ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // -- STEP 8: Verify PoW --
   qlog('  [Q8] POST verify PoW...', 'step');
   const powVerifyRes = await queueClient.post(
     `${queueItBase}/challengeapi/${customerId}/${eventId}/verify`,
     JSON.stringify({
-      challengeType: 'ProofOfWork',
+      challengeType: 'proofofwork',
       sessionId: powChallenge.sessionId,
       challengeDetails: powChallengeDetails,
       solution: solutionEncoded,
-      stats: { durationMs },
+      stats: { ...UA_STATS, Duration: durationMs },
       customerId,
       eventId,
       version: 6,
     }),
-    { headers: { ...challengeHeaders, 'x-requested-with': 'XMLHttpRequest' } }
+    { headers: challengeHeaders, skipDelay: true } as any
   );
 
   const powVerify = powVerifyRes.data;
-  if (powVerify?.challengeFailed) throw new Error('Queue-it: PoW verify failed');
-  const powSessionInfo = powVerify?.sessionInfo;
-  qlog('  Ô£ô PoW v├®rifi├® par Queue-it', 'success');
+  qlog(`  [info] powVerify status=${powVerifyRes.status} keys: ${Object.keys(powVerify || {}).join(', ')}`, 'info');
+  if (powVerifyRes.status >= 400 || powVerify?.challengeFailed) {
+    throw new Error(`Queue-it: PoW verify failed (${powVerifyRes.status}): ${JSON.stringify(powVerify).slice(0, 300)}`);
+  }
+  const powSessionInfo = powVerify?.sessionInfo
+    ?? powVerify?.challengeSession
+    ?? powVerify?.session
+    ?? powVerify?.challengeSessionInfo;
+  if (!powSessionInfo) {
+    qlog(`  [!] sessionInfo absent de powVerify - body: ${JSON.stringify(powVerify).slice(0, 200)}`, 'warn');
+  } else {
+    qlog(`  [info] powSessionInfo.sourceIp=${powSessionInfo.sourceIp}`, 'info');
+  }
+  qlog('  [OK] PoW verifie par Queue-it', 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 9: POST enqueue ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  qlog('  [Q9] POST enqueue ÔÇö entr├®e dans la file...', 'step');
+  // -- STEP 9: POST enqueue --
+  qlog('  [Q9] POST enqueue - entree dans la file...', 'step');
   const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
     + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
     + `&t=${encodeURIComponent(targetUrl)}`
     + `&enqueuetoken=${encodeURIComponent(enqueueToken)}`;
 
   const enqueueBody = {
-    challengeSessions: [recaptchaSessionInfo, powSessionInfo],
+    challengeSessions: [recaptchaSessionInfo, powSessionInfo].filter(s => s != null),
     layoutName: 'Generic TMFR and partners 2024',
     customUrlParams: '',
     targetUrl,
     CustomDataEnqueue: null,
-    QueueitEnqueueToken: enqueueToken,
+    QueueitEnqueueToken: null,
     Referrer: '',
   };
+  qlog(`  [info] challengeSessions count: ${enqueueBody.challengeSessions.length}`, 'info');
+  qlog(`  [info] enqueueToken: ${enqueueToken ? enqueueToken.slice(0, 60) + '...' : '(vide)'}`, 'info');
+  qlog(`  [info] rcIP=${recaptchaSessionInfo?.sourceIp} powIP=${powSessionInfo?.sourceIp} match=${recaptchaSessionInfo?.sourceIp === powSessionInfo?.sourceIp}`, 'info');
 
   const enqueueRes = await queueClient.post(enqueueUrl, JSON.stringify(enqueueBody), {
     headers: {
       Accept: 'application/json, text/javascript, */*; q=0.01',
+      'Accept-Language': 'fr-FR',
       'Content-Type': 'application/json',
       Origin: queueItBase,
       Referer: queueItUrl,
@@ -210,9 +264,6 @@ export const runQueueIt = async (
       'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Windows"',
-      'x-queueit-challange-customerid': customerId,
-      'x-queueit-challange-eventid': eventId,
-      'x-queueit-challange-hash': challengeHash,
       'Cookie': visitorSessionRaw,
     },
     skipDelay: true,
@@ -221,24 +272,28 @@ export const runQueueIt = async (
   const enqueueData = enqueueRes.data;
   queueClient.cookieJar.ingest(enqueueRes.headers['set-cookie']);
 
+  qlog(`  [info] enqueue response: ${JSON.stringify(enqueueData).slice(0, 400)}`, 'info');
+
   if (enqueueData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
-  if (!enqueueData?.queueId) throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueData)}`);
+  if (!enqueueData?.queueId) {
+    throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueData).slice(0, 300)}`);
+  }
 
   const queueId: string = enqueueData.queueId;
-  qlog(`  Ô£ô Enqueued! ID=${queueId.slice(0, 8)}... ÔÇö polling...`, 'success');
+  qlog(`  [OK] Enqueue! ID=${queueId.slice(0, 8)}... - polling toutes les 10s`, 'success');
 
-  // ÔöÇÔöÇÔöÇ STEP 10: Polling /status jusqu'├á la redirection ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // -- STEP 10: Poll /status until redirect --
   const seid = crypto.randomUUID();
   const sets = Date.now().toString();
   const layoutName = 'Generic TMFR and partners 2024';
   let layoutVersion = 179115981772;
   let queueItemHeader = enqueueRes.headers['x-queueit-queueitem-v2'] || '';
   let pollCount = 0;
-  const POLL_INTERVAL_MS = 10000; // 10 secondes entre chaque poll
-  const maxPolls = 6 * 60; // max 1h (6 polls/min ├ù 60 min)
+  const POLL_INTERVAL_MS = 10000;
+  const maxPolls = 6 * 60; // 1h max
 
   while (pollCount < maxPolls) {
-    if (stopSignal?.stopped) throw new Error('Task arr├¬t├®e par l\'utilisateur');
+    if (stopSignal?.stopped) throw new Error('Task arretee par utilisateur');
 
     pollCount++;
     await sleep(POLL_INTERVAL_MS);
@@ -294,8 +349,7 @@ export const runQueueIt = async (
 
     if (onUpdate) onUpdate({ queuePosition: String(ahead), forecastStatus: forecast });
 
-    // Log ├á chaque poll (10s = fr├®quence raisonnable)
-    qlog(`  ÔÅ│ Position: ${ahead} devant toi${whichIsIn ? ` ┬À ${whichIsIn}` : ''} (${forecast})`, 'queue');
+    qlog(`  [Q] Position: ${ahead} devant toi${whichIsIn ? ` | ${whichIsIn}` : ''} (${forecast})`, 'queue');
 
     if (d.redirectUrl && d.isRedirectToTarget) {
       const redirectUrl: string = d.redirectUrl;
@@ -308,10 +362,10 @@ export const runQueueIt = async (
       const queueItCookieValue = queueItCookieName ? allCookies[queueItCookieName] : '';
       const queueItCookie = queueItCookieName ? `${queueItCookieName}=${queueItCookieValue}` : '';
 
-      qlog('  ­ƒÄë File pass├®e! Redirection re├ºue', 'success');
+      qlog('  [OK] File passee! Redirection recue', 'success');
       return { queueItCookie, queueittoken, redirectUrl };
     }
   }
 
-  throw new Error('Queue-it: timeout apr├¿s 1h de polling');
+  throw new Error('Queue-it: timeout apres 1h de polling');
 };

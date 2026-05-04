@@ -15,6 +15,24 @@ const SKIP_DELAY_PATTERNS = [
 const shouldSkipDelay = (url: string): boolean =>
   SKIP_DELAY_PATTERNS.some(p => url.includes(p));
 
+// Shared agent pool : one HttpsProxyAgent per proxy URL so all HttpClient
+// instances for the same proxy reuse the same TCP connection pool (keep-alive).
+// Without this, each new HttpClient causes a cold-start CONNECT tunnel (5-30s).
+const agentPool = new Map<string, HttpsProxyAgent<string>>();
+
+const getAgent = (proxyUrl: string): HttpsProxyAgent<string> => {
+  let agent = agentPool.get(proxyUrl);
+  if (!agent) {
+    // No keepAlive forced: let Node.js reuse connections naturally within the
+    // same agent instance. Forcing keepAlive causes stale-connection timeouts
+    // on residential proxies (Oxylabs, PacketStream) when the server closes
+    // the socket on its end between requests.
+    agent = new HttpsProxyAgent(proxyUrl);
+    agentPool.set(proxyUrl, agent);
+  }
+  return agent;
+};
+
 export interface HttpClientOptions {
   proxyUrl?: string;
   cookieJar?: CookieJar;
@@ -34,7 +52,9 @@ export class HttpClient {
     this.cookieJar = opts.cookieJar ?? new CookieJar();
     this.delayMs = opts.delayMs ?? 3000;
     if (this.proxyUrl) {
-      this.agent = new HttpsProxyAgent(this.proxyUrl);
+      // Reuse shared agent so the TCP tunnel established by cookie gen
+      // is reused for page check, grille, etc. (eliminates cold-start penalty)
+      this.agent = getAgent(this.proxyUrl);
     }
   }
 
