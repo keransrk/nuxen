@@ -128,8 +128,10 @@ export const runQueueIt = async (
   qlog(`  [info] rcChallenge keys: ${Object.keys(rcChallenge || {}).join(', ')}`, 'info');
 
   // -- STEP 4: Solve reCAPTCHA v2 --
-  qlog('  [Q3] Resolution reCAPTCHA v2 - Capsolver...', 'step');
-  const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId);
+  // Passer le proxy pour que Capsolver solve depuis la même IP que les verify PoW
+  // Sans ça, rcSessionInfo.sourceIp = IP Capsolver ≠ powSessionInfo.sourceIp = IP proxy → challengeFailed
+  qlog('  [Q3] Resolution reCAPTCHA v2 - Capsolver (via proxy)...', 'step');
+  const recaptchaToken = await solveRecaptchaV2(capsolverKey, rcSiteKey, queueItBase, taskId, proxyUrl);
   qlog('  [OK] reCAPTCHA v2 resolu', 'success');
 
   const UA_STATS = {

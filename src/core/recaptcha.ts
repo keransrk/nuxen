@@ -47,22 +47,45 @@ export const solveRecaptchaV3 = async (
   throw new Error('Capsolver v3 timeout (90s)');
 };
 
-// reCAPTCHA v2 ÔÇö pour Queue-it challenge
+// reCAPTCHA v2 — pour Queue-it challenge
+// IMPORTANT: proxyUrl OBLIGATOIRE pour que l'IP du token == l'IP des verify PoW
+// Si les deux IPs diffèrent, Queue-it retourne challengeFailed: true à l'enqueue
 export const solveRecaptchaV2 = async (
   capsolverKey: string,
   siteKey: string,
   websiteURL: string,
-  taskId: number
+  taskId: number,
+  proxyUrl?: string
 ): Promise<string> => {
-  logger.info(taskId, `reCAPTCHA v2 ÔÇö Capsolver (siteKey: ${siteKey.slice(0, 20)}...)`);
+  logger.info(taskId, `reCAPTCHA v2 — Capsolver (siteKey: ${siteKey.slice(0, 20)}...)`);
+
+  let taskPayload: Record<string, any>;
+
+  if (proxyUrl) {
+    try {
+      const u = new URL(proxyUrl);
+      taskPayload = {
+        type: 'ReCaptchaV2Task',
+        websiteURL,
+        websiteKey: siteKey,
+        proxyType: u.protocol.replace(':', ''),
+        proxyAddress: u.hostname,
+        proxyPort: parseInt(u.port || '80'),
+        proxyLogin: decodeURIComponent(u.username),
+        proxyPassword: decodeURIComponent(u.password),
+      };
+      logger.info(taskId, `reCAPTCHA v2 — proxy ${u.hostname}:${u.port} (IP stickiness Queue-it)`);
+    } catch {
+      logger.warn(taskId, 'reCAPTCHA v2 — proxy URL invalide, fallback proxyless');
+      taskPayload = { type: 'ReCaptchaV2TaskProxyless', websiteURL, websiteKey: siteKey };
+    }
+  } else {
+    taskPayload = { type: 'ReCaptchaV2TaskProxyless', websiteURL, websiteKey: siteKey };
+  }
 
   const createRes = await directClient.post(`${CAPSOLVER_URL}/createTask`, {
     clientKey: capsolverKey,
-    task: {
-      type: 'ReCaptchaV2TaskProxyless',
-      websiteURL,
-      websiteKey: siteKey,
-    },
+    task: taskPayload,
   }, { skipDelay: true } as any);
 
   const taskIdCapsolver: string = createRes.data?.taskId;
