@@ -126,59 +126,115 @@ export const pickRandomPlace = (
     const { matchesDateFilter } = require('../config/taskCsv.js') as typeof import('../config/taskCsv.js');
     available = available.filter(s => matchesDateFilter(s.dateSeance, filters.dates!));
     if (available.length === 0) {
-      throw new Error(`Aucune s├®ance disponible pour les dates: ${filters.dates.join(', ')}`);
+      throw new Error(`Aucune séance disponible pour les dates: ${filters.dates.join(', ')}`);
     }
   }
 
-  if (available.length === 0) throw new Error('Aucune s├®ance disponible (hasPlacesDispo = false ou complet)');
+  if (available.length === 0) throw new Error('Aucune séance disponible (hasPlacesDispo = false ou complet)');
 
   const seance = pickRandom(available);
 
-  // Filtre categories
+  // Filtre categories avec places disponibles
   let cats = seance.infoCategories!.filter(
     c => c.nbPlaces > 0 && Array.isArray(c.infoNatCliTarifs)
   );
 
-  // Filtre par section si specifie (match codCatPl ou llgCatPl)
+  // Filtre par section :
+  // On cherche "section" dans : codCatPl, llgCatPl, llcCatPl (nom catégorie)
+  // ET dans idzone / llczone de chaque zone de la catégorie (ex: "406" = numéro de zone/bloc)
+  let selectedZoneId: string | null = null;
   if (filters.section) {
-    const sec = filters.section.toLowerCase();
-    const filtered = cats.filter(c =>
-      c.codCatPl?.toLowerCase().includes(sec) ||
-      c.llgCatPl?.toLowerCase().includes(sec) ||
-      c.llcCatPl?.toLowerCase().includes(sec)
-    );
-    if (filtered.length === 0) {
-      throw new Error(`Section "${filters.section}" introuvable dans cette s├®ance`);
+    const sec = filters.section.toLowerCase().trim();
+
+    // Cherche un match catégorie OU zone
+    type CatWithZone = { cat: InfoCategory; zoneId: string | null };
+    const matches: CatWithZone[] = [];
+
+    for (const c of cats) {
+      // Match sur le nom de la catégorie
+      const catMatch =
+        c.codCatPl?.toLowerCase().includes(sec) ||
+        c.llgCatPl?.toLowerCase().includes(sec) ||
+        c.llcCatPl?.toLowerCase().includes(sec);
+
+      if (catMatch) {
+        matches.push({ cat: c, zoneId: null });
+        continue;
+      }
+
+      // Match sur une zone à l'intérieur de la catégorie
+      if (Array.isArray(c.zones)) {
+        const matchedZone = c.zones.find(
+          z => z.idzone?.toLowerCase() === sec ||
+               z.llczone?.toLowerCase().includes(sec) ||
+               z.idzone?.toLowerCase().includes(sec)
+        );
+        if (matchedZone && matchedZone.nbplaces > 0) {
+          matches.push({ cat: c, zoneId: matchedZone.idzone });
+        }
+      }
     }
-    cats = filtered;
+
+    if (matches.length === 0) {
+      // Liste des zones et catégories disponibles pour aider au debug
+      const catList = cats.map(c => `${c.codCatPl}/${c.llgCatPl}`).join(', ');
+      const zoneList = cats.flatMap(c => (c.zones ?? []).map(z => z.idzone)).filter(Boolean).join(', ');
+      throw new Error(
+        `Section "${filters.section}" introuvable. Catégories: [${catList}] | Zones: [${zoneList}]`
+      );
+    }
+
+    // Choisir aléatoirement parmi les matches
+    const picked = pickRandom(matches);
+    cats = [picked.cat];
+    selectedZoneId = picked.zoneId;
   }
 
-  // Filtre par prix (sur priceMin de la categorie)
+  // Filtre par prix — cherche dans les tarifs disponibles (pas seulement priceMin de la catégorie)
   if (filters.priceMin != null || filters.priceMax != null) {
     const filtered = cats.filter(c => {
+      // Vérifie si au moins un tarif dispo est dans la fourchette
+      const hasMatchingTarif = c.infoNatCliTarifs.some(t => {
+        if (!t.inddispo) return false;
+        if (filters.priceMin != null && t.price < filters.priceMin) return false;
+        if (filters.priceMax != null && t.price > filters.priceMax) return false;
+        return true;
+      });
+      if (hasMatchingTarif) return true;
+      // Fallback: vérifier priceMin de la catégorie
       const p = c.priceMin;
       if (filters.priceMin != null && p < filters.priceMin) return false;
       if (filters.priceMax != null && p > filters.priceMax) return false;
       return true;
     });
     if (filtered.length === 0) {
-      throw new Error(`Aucune cat├®gorie dans la fourchette de prix [${filters.priceMin ?? 'ÔêÆÔê×'}Ôé¼ ÔÇö ${filters.priceMax ?? '+Ôê×'}Ôé¼]`);
+      throw new Error(`Aucune catégorie dans la fourchette de prix [${filters.priceMin ?? '-∞'}€ – ${filters.priceMax ?? '+∞'}€]`);
     }
     cats = filtered;
   }
 
-  if (cats.length === 0) throw new Error('Aucune cat├®gorie avec des places disponibles');
+  if (cats.length === 0) throw new Error('Aucune catégorie avec des places disponibles');
 
   const cat = pickRandom(cats);
 
+  // Sélectionner le tarif dans la fourchette de prix si possible, sinon tarif standard
+  const tarifInRange = (filters.priceMin != null || filters.priceMax != null)
+    ? cat.infoNatCliTarifs.find(t => {
+        if (!t.inddispo) return false;
+        if (filters.priceMin != null && t.price < filters.priceMin) return false;
+        if (filters.priceMax != null && t.price > filters.priceMax) return false;
+        return true;
+      })
+    : undefined;
+
   const tarif =
+    tarifInRange ??
     cat.infoNatCliTarifs.find(t => t.idNatCl === 1 && t.inddispo) ??
     cat.infoNatCliTarifs.find(t => t.inddispo);
 
   if (!tarif) throw new Error(`Aucun tarif disponible dans ${cat.llgCatPl}`);
 
   // Quantites: respecter les limites du tarif + filtres CSV
-  // Si CSV vide ÔåÆ fenetre random au-dessus/dessous de l'autre
   let qMin = filters.quantityMin ?? null;
   let qMax = filters.quantityMax ?? null;
   if (qMin == null && qMax != null) qMin = Math.max(tarif.min, 1);
@@ -191,7 +247,7 @@ export const pickRandomPlace = (
 
   logger.info(
     taskId,
-    `S├®lection: s├®ance ${seance.idseanc} | cat ${cat.llgCatPl} | ${qty}x ${tarif.nameNatCl} ├á ${tarif.price}Ôé¼`
+    `Sélection: séance ${seance.idseanc} | cat ${cat.llgCatPl}${selectedZoneId ? ` zone ${selectedZoneId}` : ''} | ${qty}x ${tarif.nameNatCl} à ${tarif.price}€`
   );
 
   return {
@@ -200,7 +256,7 @@ export const pickRandomPlace = (
     llgcatpl: cat.llgCatPl,
     idNatCl: tarif.idNatCl,
     natCliQty: { [tarif.idNatCl]: qty },
-    idZone: null,
+    idZone: selectedZoneId,
     qty,
     price: tarif.price,
     dateSeance: seance.dateSeance,
