@@ -126,7 +126,16 @@ export const pickRandomPlace = (
     const { matchesDateFilter } = require('../config/taskCsv.js') as typeof import('../config/taskCsv.js');
     available = available.filter(s => matchesDateFilter(s.dateSeance, filters.dates!));
     if (available.length === 0) {
-      throw new Error(`Aucune séance disponible pour les dates: ${filters.dates.join(', ')}`);
+      // Lister les dates disponibles pour aider au debug
+      const allDates = seances
+        .filter(s => s.hasPlacesDispo && s.status === 'D')
+        .map(s => s.dateSeance?.slice(0, 10))
+        .filter(Boolean)
+        .join(', ');
+      throw new Error(
+        `Aucune séance pour les dates: ${filters.dates.join(', ')}. ` +
+        `Dates disponibles (YYYY-MM-DD): [${allDates || 'aucune'}]`
+      );
     }
   }
 

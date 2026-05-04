@@ -121,7 +121,15 @@ export const parseTaskCsv = (filePath: string): ParsedTaskFile => {
   return { rows, errors };
 };
 
-// Convertit "13/11/2026" ÔåÆ date object pour comparaison avec dateSeance ISO
+// Convertit "13/11/2026" → "2026-11-13" pour comparaison directe (évite les bugs timezone)
+const toIsoDateStr = (s: string): string | null => {
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (!m) return null;
+  const day = m[1].padStart(2, '0');
+  const month = m[2].padStart(2, '0');
+  return `${m[3]}-${month}-${day}`;
+};
+
 export const parseFrenchDate = (s: string): Date | null => {
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (!m) return null;
@@ -129,14 +137,19 @@ export const parseFrenchDate = (s: string): Date | null => {
 };
 
 export const matchesDateFilter = (dateSeanceIso: string, dates: string[]): boolean => {
-  if (dates.length === 0) return true; // pas de filtre
-  const seance = new Date(dateSeanceIso);
+  if (dates.length === 0) return true;
+  // Comparer uniquement la partie YYYY-MM-DD pour éviter les bugs timezone
+  const seanceDateStr = dateSeanceIso?.slice(0, 10); // "YYYY-MM-DD"
   for (const d of dates) {
+    const targetStr = toIsoDateStr(d);
+    if (targetStr && seanceDateStr === targetStr) return true;
+    // Fallback: comparaison via Date object (timezone peut différer)
     const target = parseFrenchDate(d);
     if (!target) continue;
-    if (seance.getFullYear() === target.getFullYear() &&
-        seance.getMonth() === target.getMonth() &&
-        seance.getDate() === target.getDate()) {
+    const seance = new Date(dateSeanceIso);
+    if (seance.getUTCFullYear() === target.getFullYear() &&
+        seance.getUTCMonth() === target.getMonth() &&
+        seance.getUTCDate() === target.getDate()) {
       return true;
     }
   }
