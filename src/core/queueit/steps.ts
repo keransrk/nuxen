@@ -233,10 +233,10 @@ export const runQueueIt = async (
 
   // -- STEP 9: POST enqueue --
   qlog('  [Q9] POST enqueue - entree dans la file...', 'step');
+  // V2 format: enqueueToken goes in BODY as QueueitEnqueueToken, NOT in URL
   const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
     + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
-    + `&t=${encodeURIComponent(targetUrl)}`
-    + `&enqueuetoken=${encodeURIComponent(enqueueToken)}`;
+    + `&t=${encodeURIComponent(targetUrl)}`;
 
   const enqueueBody = {
     challengeSessions: [recaptchaSessionInfo, powSessionInfo].filter(s => s != null),
@@ -244,7 +244,7 @@ export const runQueueIt = async (
     customUrlParams: '',
     targetUrl,
     CustomDataEnqueue: null,
-    QueueitEnqueueToken: null,
+    QueueitEnqueueToken: enqueueToken || null,
     Referrer: '',
   };
   qlog(`  [info] challengeSessions count: ${enqueueBody.challengeSessions.length}`, 'info');
@@ -302,7 +302,6 @@ export const runQueueIt = async (
       + `?cid=fr-FR`
       + `&l=${encodeURIComponent(layoutName)}`
       + `&t=${encodeURIComponent(targetUrl)}`
-      + `&enqueuetoken=${encodeURIComponent(enqueueToken)}`
       + `&seid=${seid}`
       + `&sets=${sets}`;
 
