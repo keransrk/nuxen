@@ -176,7 +176,8 @@ export const pickRandomPlace = (
         const matchedZone = c.zones.find(
           z => z.idzone?.toLowerCase() === sec ||
                z.llczone?.toLowerCase().includes(sec) ||
-               z.idzone?.toLowerCase().includes(sec)
+               z.idzone?.toLowerCase().includes(sec) ||
+               z.placementcatpl?.toLowerCase().includes(sec)
         );
         if (matchedZone && matchedZone.nbplaces > 0) {
           matches.push({ cat: c, zoneId: matchedZone.idzone });
@@ -187,7 +188,9 @@ export const pickRandomPlace = (
     if (matches.length === 0) {
       // Liste des zones et catégories disponibles pour aider au debug
       const catList = cats.map(c => `${c.codCatPl}/${c.llgCatPl}`).join(', ');
-      const zoneList = cats.flatMap(c => (c.zones ?? []).map(z => `${z.idzone}(${z.llczone})`)).filter(Boolean).join(', ');
+      const zoneList = cats.flatMap(c => (c.zones ?? []).map(z =>
+        `${z.idzone}(${z.llczone}${z.placementcatpl ? '|' + z.placementcatpl : ''})`
+      )).filter(Boolean).join(', ');
       throw new Error(
         `Section "${filters.section}" introuvable. Catégories: [${catList}] | Zones: [${zoneList}]`
       );
