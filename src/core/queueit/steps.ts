@@ -5,6 +5,7 @@ import { store } from '../store.js';
 import type { LogLevel } from '../store.js';
 import { solveRecaptchaV2 } from '../recaptcha.js';
 import { solvePoW } from './pow.js';
+import { solveAkamaiAbck } from './akamai.js';
 import crypto from 'crypto';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
@@ -27,7 +28,8 @@ export const runQueueIt = async (
   taskId: number,
   onUpdate?: (update: TaskUpdate) => void,
   stopSignal?: { stopped: boolean },
-  pollMaxMinutes?: number
+  pollMaxMinutes?: number,
+  riskbypassKey?: string,
 ): Promise<QueueItResult> => {
   const queueClient = new HttpClient({ proxyUrl, delayMs: 3000 });
 
@@ -65,6 +67,37 @@ export const runQueueIt = async (
   const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
 
   queueClient.cookieJar.ingest(pageRes.headers['set-cookie']);
+
+  // -- Détection Akamai Bot Manager --
+  // wait.ticketmaster.fr intègre Akamai via akamai-bot-manager-header-verification.min.js
+  // Sans sensor_data valide, l'enqueue retourne rticr=2 (softblock permanent)
+  const akamaiJsMatch = html.match(/(https?:\/\/[^"']+akamai-bot-manager[^"']*\.js)/);
+  const akamaiJsUrl = akamaiJsMatch ? akamaiJsMatch[1] : null;
+
+  // Extraire pageFp (numéro de produit Akamai, ex: "4601921")
+  const pageFpMatch = html.match(/\b(\d{6,8})\b(?=[^;]*akamai|[^;]*sensor)/);
+  const pageFp = pageFpMatch ? pageFpMatch[1] : '';
+
+  if (akamaiJsUrl) {
+    qlog(`  [info] Akamai Bot Manager detecte: ${akamaiJsUrl.slice(0, 80)}`, 'info');
+    if (!riskbypassKey) {
+      throw new Error(
+        'Queue-it: Akamai Bot Manager detecte sur cet event. ' +
+        'Ajoutez "riskbypass_api_key" dans config.json (service: riskbypass.com). ' +
+        'Sans cette cle, le bypass est impossible (rticr=2 permanent).'
+      );
+    }
+    // -- Q0: Générer _abck valide via RiskBypass --
+    qlog('  [Q0] Akamai Bot Manager - resolution via RiskBypass...', 'step');
+    const akamaiResult = await solveAkamaiAbck(
+      riskbypassKey, queueItViewUrl, akamaiJsUrl, pageFp, proxyUrl
+    );
+    qlog(`  [OK] Akamai _abck genere (UA: ${akamaiResult.userAgent.slice(0, 40)}...)`, 'success');
+    // Injecter les cookies Akamai dans le jar
+    for (const [k, v] of Object.entries(akamaiResult.cookies)) {
+      queueClient.cookieJar.set(k, v);
+    }
+  }
 
   const hashMatch = html.match(/challengeApiChecksumHash\s*[=:]\s*["']([^"']+)["']/);
   const challengeHash = hashMatch ? hashMatch[1] : '';
@@ -305,7 +338,9 @@ export const runQueueIt = async (
     enqueueResData = enqueueRes.data;
     enqueueResHeaders = enqueueRes.headers as Record<string, any>;
     queueClient.cookieJar.ingest(enqueueRes.headers['set-cookie']);
-    qlog(`  [info] enqueue status=${enqueueRes.status} response: ${JSON.stringify(enqueueResData).slice(0, 300)}`, 'info');
+    // Log complet (sans troncature) pour diagnostiquer le softblock
+    qlog(`  [info] enqueue status=${enqueueRes.status} response: ${JSON.stringify(enqueueResData)}`, 'info');
+    qlog(`  [info] challengeSessions envoyees: ${JSON.stringify(enqueueBody.challengeSessions).slice(0, 400)}`, 'info');
 
     if (enqueueResData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
 

@@ -177,7 +177,8 @@ const runTaskAttempt = async (
             if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
           },
           stopSignal,
-          config.poll_status_max_minutes
+          config.poll_status_max_minutes,
+          config.riskbypass_api_key || undefined,
         );
       } catch (e: any) {
         if (shouldRotate(e)) throw new ProxyRotateError('queue-it', e);
@@ -318,7 +319,8 @@ const runTaskAttempt = async (
             if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
           },
           stopSignal,
-          config.poll_status_max_minutes
+          config.poll_status_max_minutes,
+          config.riskbypass_api_key || undefined,
         );
       } catch (e: any) {
         if (shouldRotate(e)) throw new ProxyRotateError('queue-it-purchase', e);

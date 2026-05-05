@@ -3,6 +3,7 @@ import path from 'path';
 
 export interface AppConfig {
   capsolver_api_key: string;
+  riskbypass_api_key: string;
   default_webhook_url: string;
   poll_status_max_minutes: number;
   request_delay_ms: number;
@@ -21,6 +22,7 @@ export const PATHS = {
 
 const DEFAULT_CONFIG: AppConfig = {
   capsolver_api_key: 'CAP-XXXXX_REMPLACER_PAR_VOTRE_CLE',
+  riskbypass_api_key: '',
   default_webhook_url: 'https://discord.com/api/webhooks/REMPLACER',
   poll_status_max_minutes: 30,
   request_delay_ms: 2000,
