@@ -124,7 +124,8 @@ export const purchaseInit = async (
     headers,
     data: JSON.stringify(body),
     maxRedirects: 0,
-  });
+    skipDelay: true,  // one-shot write, pas de répétition → pas de throttling
+  } as any);
 
   // ÔöÇÔöÇÔöÇ Queue-it redirect ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (res.status === 302 || res.status === 301) {

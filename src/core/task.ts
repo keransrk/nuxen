@@ -79,9 +79,10 @@ const runTaskAttempt = async (
         'Accept-Language': 'fr-FR,fr;q=0.9',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
       },
-        maxRedirects: 0,
-        timeout: 20000, // 20s - cold-start proxy can take 10-28s on first request
-      });
+      maxRedirects: 0,
+      timeout: 20000,
+      skipDelay: true,  // one-shot read, pas de throttling nécessaire
+    } as any);
 
     let queueItDetectedUrl: string | null = null;
     if (pageRes.status === 302 || pageRes.status === 301) {

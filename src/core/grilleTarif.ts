@@ -95,7 +95,7 @@ export const getGrilleTarifaire = async (
     'sec-fetch-site': 'same-origin',
   };
 
-  const res = await client.get<Seance[]>(url, { headers, timeout: 25000 });
+  const res = await client.get<Seance[]>(url, { headers, timeout: 25000, skipDelay: true } as any);
 
   if (res.status !== 200) throw new Error(`grille-tarifaire ${res.status}: ${JSON.stringify(res.data).slice(0, 200)}`);
 
