@@ -6,6 +6,7 @@ import type { LogLevel } from '../store.js';
 import { solveRecaptchaV2 } from '../recaptcha.js';
 import { solvePoW } from './pow.js';
 import { solveAkamaiAbck } from './akamai.js';
+import { findAkamaiScriptPath, runAkamaiVmBypass } from './akamai-vm.js';
 import crypto from 'crypto';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36';
@@ -68,34 +69,77 @@ export const runQueueIt = async (
 
   queueClient.cookieJar.ingest(pageRes.headers['set-cookie']);
 
+  // Base URL pour toutes les requêtes Queue-it (spa-api + challengeapi)
+  // Certains events utilisent wait.ticketmaster.fr (branded), d'autres ticketmasterfr.queue-it.net
+  // On utilise le domaine RÉEL de l'URL reçue plutôt que de reconstruire depuis le customerId
+  const queueItBase = urlObj.hostname.includes('queue-it.net')
+    ? `https://${customerId}.queue-it.net`
+    : `https://${urlObj.hostname}`;  // ex: https://wait.ticketmaster.fr
+
   // -- Détection Akamai Bot Manager --
-  // wait.ticketmaster.fr intègre Akamai via akamai-bot-manager-header-verification.min.js
-  // Sans sensor_data valide, l'enqueue retourne rticr=2 (softblock permanent)
-  const akamaiJsMatch = html.match(/(https?:\/\/[^"']+akamai-bot-manager[^"']*\.js)/);
-  const akamaiJsUrl = akamaiJsMatch ? akamaiJsMatch[1] : null;
+  // wait.ticketmaster.fr intègre Akamai Bot Manager via deux mécanismes :
+  //  1. Un script UI Queue-it (akamai-bot-manager-header-verification.min.js) dans le HTML
+  //  2. Un script d'injection Akamai servi en GET depuis wait.ticketmaster.fr (chemin relatif /xxxx/...)
+  //     Ce script génère le "sensor_data" (fingerprint navigateur) et le POSTe au même endpoint.
+  //     Sans ce POST, l'enqueue retourne rticr=2 (softblock permanent).
+  //
+  // Stratégie de bypass (par ordre de préférence) :
+  //   A) VM locale : exécuter le script Akamai dans un sandbox Node.js (gratuit, rapide)
+  //   B) RiskBypass API : fallback si le VM ne capte pas le sensor_data (payant, ~3s)
+  const akamaiUiJsMatch = html.match(/(https?:\/\/[^"']+akamai-bot-manager[^"']*\.js)/);
+  const akamaiUiJsUrl = akamaiUiJsMatch ? akamaiUiJsMatch[1] : null;
 
-  // Extraire pageFp (numéro de produit Akamai, ex: "4601921")
-  const pageFpMatch = html.match(/\b(\d{6,8})\b(?=[^;]*akamai|[^;]*sensor)/);
-  const pageFp = pageFpMatch ? pageFpMatch[1] : '';
+  // Détection via le chemin relatif Akamai dans le HTML (ex: /jiaq02cf-EbK/...)
+  const akamaiScriptPath = findAkamaiScriptPath(html);
 
-  if (akamaiJsUrl) {
-    qlog(`  [info] Akamai Bot Manager detecte: ${akamaiJsUrl.slice(0, 80)}`, 'info');
-    if (!riskbypassKey) {
-      throw new Error(
-        'Queue-it: Akamai Bot Manager detecte sur cet event. ' +
-        'Ajoutez "riskbypass_api_key" dans config.json (service: riskbypass.com). ' +
-        'Sans cette cle, le bypass est impossible (rticr=2 permanent).'
-      );
-    }
-    // -- Q0: Générer _abck valide via RiskBypass --
-    qlog('  [Q0] Akamai Bot Manager - resolution via RiskBypass...', 'step');
-    const akamaiResult = await solveAkamaiAbck(
-      riskbypassKey, queueItViewUrl, akamaiJsUrl, pageFp, proxyUrl
+  const akamaiDetected = !!(akamaiUiJsUrl || akamaiScriptPath);
+
+  if (akamaiDetected) {
+    qlog(`  [info] Akamai Bot Manager detecte${akamaiUiJsUrl ? ' (UI: ' + akamaiUiJsUrl.slice(-50) + ')' : ''}${akamaiScriptPath ? ' (injection: ' + akamaiScriptPath.slice(0, 45) + '...)' : ''}`, 'info');
+
+    // -- Tentative A : bypass Playwright (Chromium headless, vrai navigateur) --
+    const cookieHeaderNow = queueClient.cookieJar.toString();
+    const vmSuccess = await runAkamaiVmBypass(
+      html,
+      queueItBase,
+      queueItViewUrl,
+      UA,
+      cookieHeaderNow,
+      proxyUrl,
+      (msg, level) => qlog(msg, level as LogLevel ?? 'info'),
+      (playwrightCookies) => {
+        // Merge cookies set by Playwright (including validated _abck) back into session jar
+        for (const c of playwrightCookies) {
+          if (c.name && c.value) {
+            queueClient.cookieJar.set(c.name, c.value);
+          }
+        }
+        qlog(`  [info] Akamai: ${playwrightCookies.length} cookie(s) fusionnes depuis Playwright`, 'info');
+      },
     );
-    qlog(`  [OK] Akamai _abck genere (UA: ${akamaiResult.userAgent.slice(0, 40)}...)`, 'success');
-    // Injecter les cookies Akamai dans le jar
-    for (const [k, v] of Object.entries(akamaiResult.cookies)) {
-      queueClient.cookieJar.set(k, v);
+
+    if (!vmSuccess) {
+      // -- Tentative B : fallback RiskBypass API --
+      if (!riskbypassKey) {
+        throw new Error(
+          'Queue-it: Akamai detecte, bypass VM echoue. ' +
+          'Ajoutez "riskbypass_api_key" dans config.json (riskbypass.com) ' +
+          'pour activer le fallback payant.'
+        );
+      }
+      // Extraire les paramètres pour RiskBypass
+      const akamaiJsUrl = akamaiUiJsUrl ?? '';
+      const pageFpMatch = html.match(/\b(\d{6,8})\b(?=[^;]*akamai|[^;]*sensor)/);
+      const pageFp = pageFpMatch ? pageFpMatch[1] : '';
+
+      qlog('  [Q0] Akamai: VM non disponible - fallback RiskBypass API...', 'step');
+      const akamaiResult = await solveAkamaiAbck(
+        riskbypassKey, queueItViewUrl, akamaiJsUrl, pageFp, proxyUrl,
+      );
+      qlog(`  [OK] Akamai _abck (RiskBypass) genere (UA: ${akamaiResult.userAgent.slice(0, 40)}...)`, 'success');
+      for (const [k, v] of Object.entries(akamaiResult.cookies)) {
+        queueClient.cookieJar.set(k, v);
+      }
     }
   }
 
@@ -105,14 +149,6 @@ export const runQueueIt = async (
   else qlog(`  [OK] hash extrait: ${challengeHash.slice(0, 20)}...`, 'success');
 
   qlog(`  [info] enqueueToken: ${enqueueToken ? enqueueToken.slice(0, 60) + '...' : '(vide)'}`, 'info');
-
-  // Base URL pour toutes les requêtes Queue-it (spa-api + challengeapi)
-  // Certains events utilisent wait.ticketmaster.fr (branded), d'autres ticketmasterfr.queue-it.net
-  // On utilise le domaine RÉEL de l'URL reçue plutôt que de reconstruire depuis le customerId
-  const queueItBase = urlObj.hostname.includes('queue-it.net')
-    ? `https://${customerId}.queue-it.net`
-    : `https://${urlObj.hostname}`;  // ex: https://wait.ticketmaster.fr
-
   qlog(`  [info] queueItBase: ${queueItBase}`, 'info');
 
   // Headers for the challenge POST requests (exactly as browser sends)
@@ -154,6 +190,64 @@ export const runQueueIt = async (
     'x-queueit-challange-ruleid': '',
     'x-queueit-challange-rulename': '',
   };
+
+  // -- PRE-ENQUEUE PROBE (pour events sans enqueueToken) --
+  // Certains events Queue-it n'ont pas d'enqueueToken dans l'URL (flow JS côté client).
+  // Dans ce cas, le navigateur fait un premier appel POST /enqueue sans challengeSessions,
+  // ce qui crée une session côté serveur et déclenche officiellement le requirement de challenge.
+  // Les challengeSessions créées APRÈS ce probe sont liées à cette session via le cookie
+  // visitorsession → le serveur les accepte dans l'enqueue final.
+  //
+  // Sans ce probe, les sessions sont "orphelines" (pas liées à un enqueue déclenché)
+  // et le serveur retourne challengeRequired: true même si reCAPTCHA+PoW sont résolus.
+  const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
+    + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
+    + `&t=${encodeURIComponent(targetUrl)}`;
+
+  if (!enqueueToken) {
+    qlog('  [Q1b] Pre-enqueue probe (pas d\'enqueueToken - flow JS)...', 'step');
+    try {
+      const probeRes = await queueClient.post(enqueueUrl, JSON.stringify({
+        challengeSessions: [],
+        layoutName: 'Generic TMFR and partners 2024',
+        customUrlParams: '',
+        targetUrl,
+        CustomDataEnqueue: null,
+        QueueitEnqueueToken: null,
+        Referrer: targetUrl,
+      }), {
+        headers: {
+          Accept: 'application/json, text/javascript, */*; q=0.01',
+          'Accept-Language': 'fr-FR',
+          'Content-Type': 'application/json',
+          Origin: queueItBase,
+          Referer: queueItViewUrl,
+          'x-requested-with': 'XMLHttpRequest',
+          'x-queueit-qpage-referral': '',
+          'User-Agent': UA,
+          'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          Cookie: queueClient.cookieJar.toString(),
+        },
+        skipDelay: true,
+      } as any);
+      // Capturer les cookies de la réponse probe (marquent la session comme "challenge-pending")
+      queueClient.cookieJar.ingest(probeRes.headers['set-cookie']);
+      const probeData = probeRes.data;
+      if (probeData?.challengeRequired === true) {
+        qlog('  [OK] Probe: challengeRequired=true confirme - session initialisee pour le challenge', 'success');
+      } else if (probeData?.queueId) {
+        // Rare : l'event n'est pas encore actif et l'enqueue a directement reussi sans challenge
+        qlog(`  [OK] Probe: enqueue direct sans challenge (queueId=${probeData.queueId.slice(0, 8)}...)`, 'success');
+      } else {
+        qlog(`  [info] Probe status=${probeRes.status} body: ${JSON.stringify(probeData).slice(0, 150)}`, 'info');
+      }
+    } catch (e: any) {
+      // Non-fatal : on continue le flow normal
+      qlog(`  [~] Probe echoue (${e.message?.slice(0, 80)}) - on continue sans`, 'warn');
+    }
+  }
 
   // -- STEPS Q2-Q9: Challenge loop (retried on IP mismatch or challengeFailed) --
   // Oxylabs residential proxies can assign different IPs on separate TCP connections.
@@ -297,9 +391,6 @@ export const runQueueIt = async (
 
     // -- Q9: POST enqueue --
     qlog('  [Q9] POST enqueue - entree dans la file...', 'step');
-    const enqueueUrl = `${queueItBase}/spa-api/queue/${customerId}/${eventId}/enqueue`
-      + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
-      + `&t=${encodeURIComponent(targetUrl)}`;
 
     // Snapshot complet du jar APRÈS Q4 et Q8 (incluant les cookies de vérification de challenge)
     const allCookiesAtEnqueue = queueClient.cookieJar.toString();
@@ -350,8 +441,8 @@ export const runQueueIt = async (
       throw new Error(`Queue-it: challengeFailed persistant: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
     }
 
-    // Softblock Queue-it : bot detection non liée au challenge (rticr=2)
-    // On retry car les cookies de vérif peuvent être insuffisants au premier passage
+    // Softblock Queue-it : le pre-enqueue probe n'a pas suffi ou la session a expire
+    // On retry le challenge complet - les cookies du probe sont déjà dans le jar
     if (enqueueResData?.redirectUrl?.includes('/softblock/')) {
       softblockCount++;
       const rticr = (() => { try { return new URL(enqueueResData.redirectUrl, queueItBase).searchParams.get('rticr'); } catch { return '?'; } })();
