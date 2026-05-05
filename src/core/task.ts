@@ -81,7 +81,7 @@ const runTaskAttempt = async (
       },
       maxRedirects: 0,
       timeout: 20000,
-      skipDelay: true,  // one-shot read, pas de throttling nécessaire
+      // garde le délai config : simule un humain qui arrive sur la page après les cookies
     } as any);
 
     let queueItDetectedUrl: string | null = null;
