@@ -57,10 +57,6 @@ export const runQueueIt = async (
   const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
 
   queueClient.cookieJar.ingest(pageRes.headers['set-cookie']);
-  const visitorSessionRaw = Object.entries(queueClient.cookieJar.toObject())
-    .filter(([k]) => k.toLowerCase().includes('visitorsession'))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('; ');
 
   const hashMatch = html.match(/challengeApiChecksumHash\s*[=:]\s*["']([^"']+)["']/);
   const challengeHash = hashMatch ? hashMatch[1] : '';
@@ -79,6 +75,7 @@ export const runQueueIt = async (
   qlog(`  [info] queueItBase: ${queueItBase}`, 'info');
 
   // Headers for the challenge POST requests (exactly as browser sends)
+  // Cookie field is added dynamically inside the loop from the live jar
   const challengeRequestHeaders = {
     Accept: '*/*',
     'Accept-Language': 'fr-FR',
@@ -94,10 +91,10 @@ export const runQueueIt = async (
     'x-queueit-challange-reason': '1',
     'x-queueit-challange-ruleid': '',
     'x-queueit-challange-rulename': '',
-    'Cookie': visitorSessionRaw,
   };
 
   // Headers for XHR verify/enqueue requests
+  // Cookie field is added dynamically inside the loop from the live jar
   const challengeHeaders = {
     Accept: 'application/json, text/javascript, */*; q=0.01',
     'Accept-Language': 'fr-FR',
@@ -115,7 +112,6 @@ export const runQueueIt = async (
     'x-queueit-challange-reason': '1',
     'x-queueit-challange-ruleid': '',
     'x-queueit-challange-rulename': '',
-    'Cookie': visitorSessionRaw,
   };
 
   // -- STEPS Q2-Q9: Challenge loop (retried on IP mismatch or challengeFailed) --
@@ -145,7 +141,7 @@ export const runQueueIt = async (
     const rcChallengeRes = await queueClient.post(
       `${queueItBase}/challengeapi/recaptcha/challenge/`,
       null,
-      { headers: challengeRequestHeaders, skipDelay: true } as any
+      { headers: { ...challengeRequestHeaders, Cookie: queueClient.cookieJar.toString() }, skipDelay: true } as any
     );
 
     const rcChallenge = rcChallengeRes.data;
@@ -173,7 +169,7 @@ export const runQueueIt = async (
         eventId,
         version: 6,
       }),
-      { headers: challengeHeaders, skipDelay: true } as any
+      { headers: { ...challengeHeaders, Cookie: queueClient.cookieJar.toString() }, skipDelay: true } as any
     );
 
     const rcVerify = rcVerifyRes.data;
@@ -196,7 +192,7 @@ export const runQueueIt = async (
     const powChallengeRes = await queueClient.post(
       `${queueItBase}/challengeapi/pow/challenge/`,
       null,
-      { headers: challengeRequestHeaders, skipDelay: true } as any
+      { headers: { ...challengeRequestHeaders, Cookie: queueClient.cookieJar.toString() }, skipDelay: true } as any
     );
 
     const powChallenge = powChallengeRes.data;
@@ -226,7 +222,7 @@ export const runQueueIt = async (
         eventId,
         version: 6,
       }),
-      { headers: challengeHeaders, skipDelay: true } as any
+      { headers: { ...challengeHeaders, Cookie: queueClient.cookieJar.toString() }, skipDelay: true } as any
     );
 
     const powVerify = powVerifyRes.data;
@@ -259,6 +255,11 @@ export const runQueueIt = async (
       + `?cid=fr-FR&l=${encodeURIComponent('Generic TMFR and partners 2024')}`
       + `&t=${encodeURIComponent(targetUrl)}`;
 
+    // Snapshot complet du jar APRÈS Q4 et Q8 (incluant les cookies de vérification de challenge)
+    const allCookiesAtEnqueue = queueClient.cookieJar.toString();
+    const cookieCount = (allCookiesAtEnqueue.match(/=/g) || []).length;
+    qlog(`  [info] cookies jar avant enqueue: ${cookieCount} cookie(s)`, 'info');
+
     const enqueueBody = {
       challengeSessions: [recaptchaSessionInfo, powSessionInfo].filter(s => s != null),
       layoutName: 'Generic TMFR and partners 2024',
@@ -266,7 +267,7 @@ export const runQueueIt = async (
       targetUrl,
       CustomDataEnqueue: null,
       QueueitEnqueueToken: enqueueToken || null,
-      Referrer: '',
+      Referrer: targetUrl,
     };
 
     const enqueueRes = await queueClient.post(enqueueUrl, JSON.stringify(enqueueBody), {
@@ -282,7 +283,8 @@ export const runQueueIt = async (
         'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
-        'Cookie': visitorSessionRaw,
+        // Tous les cookies du jar (visitorsession + cookies de vérif challenge Q4/Q8)
+        Cookie: allCookiesAtEnqueue,
       },
       skipDelay: true,
     } as any);
@@ -298,6 +300,15 @@ export const runQueueIt = async (
       qlog(`  [!] challengeFailed malgre IP match - retry ${attempt}/${MAX_CHALLENGE_RETRIES}...`, 'warn');
       if (attempt < MAX_CHALLENGE_RETRIES) continue;
       throw new Error(`Queue-it: challengeFailed persistant apres ${MAX_CHALLENGE_RETRIES} tentatives: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
+    }
+
+    // Softblock Queue-it : bot detection non liée au challenge (rticr=2)
+    // On retry car les cookies de vérif peuvent être insuffisants au premier passage
+    if (enqueueResData?.redirectUrl?.includes('/softblock/')) {
+      const rticr = (() => { try { return new URL(enqueueResData.redirectUrl, queueItBase).searchParams.get('rticr'); } catch { return '?'; } })();
+      qlog(`  [!] softblock Queue-it (rticr=${rticr}) - retry ${attempt}/${MAX_CHALLENGE_RETRIES}...`, 'warn');
+      if (attempt < MAX_CHALLENGE_RETRIES) continue;
+      throw new Error(`Queue-it: softblock persistant apres ${MAX_CHALLENGE_RETRIES} tentatives (rticr=${rticr})`);
     }
 
     // queueId peut venir du body OU du header x-queueit-queueitem-v2
