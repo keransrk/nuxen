@@ -131,7 +131,8 @@ const runTaskAttempt = async (
             });
             if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
           },
-          stopSignal
+          stopSignal,
+          config.poll_status_max_minutes
         );
       } catch (e: any) {
         if (shouldRotate(e)) throw new ProxyRotateError('queue-it', e);
@@ -235,7 +236,8 @@ const runTaskAttempt = async (
           store.updateTask(taskId, { queuePosition: pos, forecastStatus: forecast, statusText: `File: ${pos} devant` });
           if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
         },
-        stopSignal
+        stopSignal,
+        config.poll_status_max_minutes
       );
     } catch (e: any) {
       if (shouldRotate(e)) throw new ProxyRotateError('queue-it-purchase', e);

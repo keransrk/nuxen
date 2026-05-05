@@ -26,7 +26,8 @@ export const runQueueIt = async (
   capsolverKey: string,
   taskId: number,
   onUpdate?: (update: TaskUpdate) => void,
-  stopSignal?: { stopped: boolean }
+  stopSignal?: { stopped: boolean },
+  pollMaxMinutes?: number
 ): Promise<QueueItResult> => {
   const queueClient = new HttpClient({ proxyUrl, delayMs: 3000 });
 
@@ -311,7 +312,7 @@ export const runQueueIt = async (
   let queueItemHeader = (enqueueResHeaders['x-queueit-queueitem-v2'] as string) || '';
   let pollCount = 0;
   const POLL_INTERVAL_MS = 10000;
-  const maxPolls = 6 * 60; // 1h max
+  const maxPolls = Math.ceil((pollMaxMinutes ?? 60) * 60 * 1000 / POLL_INTERVAL_MS);
 
   while (pollCount < maxPolls) {
     if (stopSignal?.stopped) throw new Error('Task arretee par utilisateur');
