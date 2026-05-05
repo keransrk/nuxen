@@ -43,6 +43,14 @@ export const runQueueIt = async (
   const targetUrl = decodeURIComponent(urlObj.searchParams.get('t') || '');
   const customerId = urlObj.searchParams.get('c') || 'ticketmasterfr';
 
+  // Construct the /view URL - this is the actual page URL after Queue-it's redirect,
+  // and where the browser's JS runs. All XHR calls from the browser use this as Referer.
+  const queueItViewUrlObj = new URL(queueItUrl);
+  if (!queueItViewUrlObj.pathname.startsWith('/view')) {
+    queueItViewUrlObj.pathname = '/view';
+  }
+  const queueItViewUrl = queueItViewUrlObj.toString();
+
   qlog(`  Queue-it: event=${eventId}`, 'info');
 
   // -- STEP 2: GET Queue-it page --
@@ -80,7 +88,7 @@ export const runQueueIt = async (
     Accept: '*/*',
     'Accept-Language': 'fr-FR',
     Origin: queueItBase,
-    Referer: queueItUrl,
+    Referer: queueItViewUrl,
     'User-Agent': UA,
     'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
     'sec-ch-ua-mobile': '?0',
@@ -100,7 +108,7 @@ export const runQueueIt = async (
     'Accept-Language': 'fr-FR',
     'Content-Type': 'application/json',
     Origin: queueItBase,
-    Referer: queueItUrl,
+    Referer: queueItViewUrl,
     'User-Agent': UA,
     'sec-ch-ua': '"Chromium";v="147", "Not.A/Brand";v="8"',
     'sec-ch-ua-mobile': '?0',
@@ -118,7 +126,11 @@ export const runQueueIt = async (
   // Oxylabs residential proxies can assign different IPs on separate TCP connections.
   // Queue-it requires rcSessionInfo.sourceIp === powSessionInfo.sourceIp at enqueue.
   // We retry the full challenge sequence until IPs match and enqueue succeeds.
-  const MAX_CHALLENGE_RETRIES = 6;
+  // Two separate counters to avoid IP mismatch retries consuming softblock budget.
+  const MAX_IP_RETRIES = 6;
+  const MAX_SOFTBLOCK_RETRIES = 3;
+  let ipMismatchCount = 0;
+  let softblockCount = 0;
 
   const UA_STATS = {
     Browser: 'Chrome',
@@ -133,8 +145,8 @@ export const runQueueIt = async (
   let enqueueResData: any = null;
   let enqueueResHeaders: Record<string, any> = {};
 
-  for (let attempt = 1; attempt <= MAX_CHALLENGE_RETRIES; attempt++) {
-    const attemptSuffix = attempt > 1 ? ` (tentative ${attempt}/${MAX_CHALLENGE_RETRIES})` : '';
+  for (let attempt = 1; attempt <= MAX_IP_RETRIES + MAX_SOFTBLOCK_RETRIES; attempt++) {
+    const attemptSuffix = attempt > 1 ? ` (tentative ${attempt})` : '';
 
     // -- Q2: GET reCAPTCHA challenge --
     qlog(`  [Q2] GET reCAPTCHA challenge${attemptSuffix}...`, 'step');
@@ -243,9 +255,10 @@ export const runQueueIt = async (
     // -- IP match check: bail early without calling enqueue --
     const ipMatch = rcIP && powIP && rcIP === powIP;
     if (!ipMatch) {
+      ipMismatchCount++;
       qlog(`  [!] IP mismatch (rc=${rcIP} pow=${powIP}) - retry challenge...`, 'warn');
-      if (attempt < MAX_CHALLENGE_RETRIES) continue;
-      throw new Error(`Queue-it: IP mismatch persistant apres ${MAX_CHALLENGE_RETRIES} tentatives`);
+      if (ipMismatchCount < MAX_IP_RETRIES) continue;
+      throw new Error(`Queue-it: IP mismatch persistant apres ${MAX_IP_RETRIES} tentatives`);
     }
     qlog(`  [info] IP match OK: ${rcIP}`, 'info');
 
@@ -276,7 +289,7 @@ export const runQueueIt = async (
         'Accept-Language': 'fr-FR',
         'Content-Type': 'application/json',
         Origin: queueItBase,
-        Referer: queueItUrl,
+        Referer: queueItViewUrl,
         'x-requested-with': 'XMLHttpRequest',
         'x-queueit-qpage-referral': '',
         'User-Agent': UA,
@@ -297,18 +310,19 @@ export const runQueueIt = async (
     if (enqueueResData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
 
     if (enqueueResData?.challengeFailed) {
-      qlog(`  [!] challengeFailed malgre IP match - retry ${attempt}/${MAX_CHALLENGE_RETRIES}...`, 'warn');
-      if (attempt < MAX_CHALLENGE_RETRIES) continue;
-      throw new Error(`Queue-it: challengeFailed persistant apres ${MAX_CHALLENGE_RETRIES} tentatives: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
+      qlog(`  [!] challengeFailed malgre IP match - retry...`, 'warn');
+      if (ipMismatchCount < MAX_IP_RETRIES) { ipMismatchCount++; continue; }
+      throw new Error(`Queue-it: challengeFailed persistant: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
     }
 
     // Softblock Queue-it : bot detection non liée au challenge (rticr=2)
     // On retry car les cookies de vérif peuvent être insuffisants au premier passage
     if (enqueueResData?.redirectUrl?.includes('/softblock/')) {
+      softblockCount++;
       const rticr = (() => { try { return new URL(enqueueResData.redirectUrl, queueItBase).searchParams.get('rticr'); } catch { return '?'; } })();
-      qlog(`  [!] softblock Queue-it (rticr=${rticr}) - retry ${attempt}/${MAX_CHALLENGE_RETRIES}...`, 'warn');
-      if (attempt < MAX_CHALLENGE_RETRIES) continue;
-      throw new Error(`Queue-it: softblock persistant apres ${MAX_CHALLENGE_RETRIES} tentatives (rticr=${rticr})`);
+      qlog(`  [!] softblock Queue-it (rticr=${rticr}) - tentative softblock ${softblockCount}/${MAX_SOFTBLOCK_RETRIES}...`, 'warn');
+      if (softblockCount < MAX_SOFTBLOCK_RETRIES) continue;
+      throw new Error(`Queue-it: softblock persistant apres ${MAX_SOFTBLOCK_RETRIES} tentatives (rticr=${rticr})`);
     }
 
     // queueId peut venir du body OU du header x-queueit-queueitem-v2
@@ -323,8 +337,7 @@ export const runQueueIt = async (
     break; // Succès
   }
 
-  if (!queueId) throw new Error('Queue-it: echec challenge apres toutes les tentatives');
-  qlog(`  [OK] Enqueue! ID=${queueId.slice(0, 8)}... - polling toutes les 10s`, 'success');
+  if (!queueId) throw new Error('Queue-it: echec challenge apres toutes les tentatives');  qlog(`  [OK] Enqueue! ID=${queueId.slice(0, 8)}... - polling toutes les 10s`, 'success');
 
   // -- STEP 10: Poll /status until redirect --
   const seid = crypto.randomUUID();
