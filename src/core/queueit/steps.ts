@@ -69,7 +69,14 @@ export const runQueueIt = async (
 
   qlog(`  [info] enqueueToken: ${enqueueToken ? enqueueToken.slice(0, 60) + '...' : '(vide)'}`, 'info');
 
-  const queueItBase = `https://${customerId}.queue-it.net`;
+  // Base URL pour toutes les requêtes Queue-it (spa-api + challengeapi)
+  // Certains events utilisent wait.ticketmaster.fr (branded), d'autres ticketmasterfr.queue-it.net
+  // On utilise le domaine RÉEL de l'URL reçue plutôt que de reconstruire depuis le customerId
+  const queueItBase = urlObj.hostname.includes('queue-it.net')
+    ? `https://${customerId}.queue-it.net`
+    : `https://${urlObj.hostname}`;  // ex: https://wait.ticketmaster.fr
+
+  qlog(`  [info] queueItBase: ${queueItBase}`, 'info');
 
   // Headers for the challenge POST requests (exactly as browser sends)
   const challengeRequestHeaders = {
@@ -283,7 +290,7 @@ export const runQueueIt = async (
     enqueueResData = enqueueRes.data;
     enqueueResHeaders = enqueueRes.headers as Record<string, any>;
     queueClient.cookieJar.ingest(enqueueRes.headers['set-cookie']);
-    qlog(`  [info] enqueue response: ${JSON.stringify(enqueueResData).slice(0, 300)}`, 'info');
+    qlog(`  [info] enqueue status=${enqueueRes.status} response: ${JSON.stringify(enqueueResData).slice(0, 300)}`, 'info');
 
     if (enqueueResData?.invalidQueueitEnqueueToken) throw new Error('Queue-it: invalidQueueitEnqueueToken');
 
@@ -293,11 +300,15 @@ export const runQueueIt = async (
       throw new Error(`Queue-it: challengeFailed persistant apres ${MAX_CHALLENGE_RETRIES} tentatives: ${JSON.stringify(enqueueResData).slice(0, 200)}`);
     }
 
-    if (!enqueueResData?.queueId) {
-      throw new Error(`Queue-it: enqueue sans queueId: ${JSON.stringify(enqueueResData).slice(0, 300)}`);
+    // queueId peut venir du body OU du header x-queueit-queueitem-v2
+    const queueIdFromHeader = (enqueueRes.headers['x-queueit-queueitem-v2'] as string || '')
+      .split('~').find(p => /^[0-9a-f-]{36}$/i.test(p)) ?? '';
+
+    if (!enqueueResData?.queueId && !queueIdFromHeader) {
+      throw new Error(`Queue-it: enqueue sans queueId: status=${enqueueRes.status} body=${JSON.stringify(enqueueResData).slice(0, 300)}`);
     }
 
-    queueId = enqueueResData.queueId;
+    queueId = enqueueResData?.queueId || queueIdFromHeader;
     break; // Succès
   }
 

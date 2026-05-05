@@ -9,6 +9,7 @@ import { sendSession } from './session.js';
 import { store, type LogLevel } from './store.js';
 import { logger } from '../utils/logger.js';
 import { ProxyPool } from '../config/proxyFile.js';
+import { TokenPool } from '../utils/tokenPool.js';
 import type { AppConfig } from '../config/loader.js';
 import type { EventInfo } from './eventResolver.js';
 import type { TmCookies } from './cookies.js';
@@ -87,7 +88,10 @@ const runTaskAttempt = async (
     let queueItDetectedUrl: string | null = null;
     if (pageRes.status === 302 || pageRes.status === 301) {
       const location: string = pageRes.headers['location'] || '';
-      if (location.includes('queue-it.net')) {
+      // TM utilise deux domaines selon les events :
+      //   - queue-it.net (direct)
+      //   - wait.ticketmaster.fr (alias TM qui redirige vers queue-it.net)
+      if (location.includes('queue-it.net') || location.includes('wait.ticketmaster.fr')) {
         queueItDetectedUrl = location;
         log('[Q] Queue-it detecte (redirect 302 sur page evenement)', 'queue');
       }
@@ -95,23 +99,63 @@ const runTaskAttempt = async (
 
     if (!queueItDetectedUrl && pageRes.status === 200) {
       const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
-      const isQueueItPage = html.includes('queue-it.net') && (
-        html.includes('"integrations":[{') ||
-        html.includes('data-pageid="queue"') ||
-        html.includes('data-pageid="before"')
+
+      // --- Détection Queue-it côté client (JS integration) ---
+      // TM intègre Queue-it via JS sur la page (200) → la redirection est déclenchée
+      // par le script, pas par le serveur. On détecte la présence des scripts.
+      const hasQueueItScript = (
+        html.includes('static.queue-it.net') ||
+        html.includes('c2.queue-it.net') ||
+        html.includes('queue-it.net') ||
+        html.includes('wait.ticketmaster.fr') ||
+        html.includes('queueclient.min.js') ||
+        html.includes('QueueITEngine')
       );
-      if (isQueueItPage) {
-        const customerMatch = html.match(/"customerId"\s*:\s*"([^"]+)"/);
-        const eventMatch = html.match(/"eventId"\s*:\s*"([^"]+)"/);
-        const targetMatch = html.match(/"targetUrl"\s*:\s*decodeURIComponent\('([^']+)'\)/);
-        if (customerMatch && eventMatch) {
-          const cid = customerMatch[1];
-          const eid = eventMatch[1];
-          const t = targetMatch ? targetMatch[1] : encodeURIComponent(pageUrl);
-          queueItDetectedUrl = `https://${cid}.queue-it.net/?c=${cid}&e=${eid}&t=${t}`;
-          log(`[Q] Queue-it detecte (HTML client-side, event=${eid})`, 'queue');
+
+      if (hasQueueItScript) {
+        // Extraire la config Queue-it (customerId, eventId)
+        const customerMatch = html.match(/"customerId"\s*:\s*"([^"]+)"/) ||
+                              html.match(/customerId\s*:\s*["']([^"']+)["']/) ||
+                              html.match(/["']c["']\s*:\s*["']([^"']+)["']/);
+        const eventMatch    = html.match(/"eventId"\s*:\s*"([^"]+)"/) ||
+                              html.match(/eventId\s*:\s*["']([^"']+)["']/) ||
+                              html.match(/["']e["']\s*:\s*["']([^"']+)["']/);
+        const targetMatch   = html.match(/"targetUrl"\s*:\s*decodeURIComponent\('([^']+)'\)/) ||
+                              html.match(/"targetUrl"\s*:\s*["']([^"']+)["']/);
+
+        const cid = customerMatch?.[1] ?? 'ticketmasterfr';
+        const eid = eventMatch?.[1] ?? '';
+        const t   = targetMatch ? decodeURIComponent(targetMatch[1]) : pageUrl;
+
+        if (eid) {
+          queueItDetectedUrl = `https://wait.ticketmaster.fr/?c=${cid}&e=${eid}&ver=javascript-4.4.2&t=${encodeURIComponent(t)}`;
+          log(`[Q] Queue-it detecte (HTML JS integration, event=${eid})`, 'queue');
         } else {
-          log('[!] Queue-it probable (scripts detectes) - attente purchase/init', 'warn');
+          // Queue-it scripts présents mais config non extractible depuis HTML statique
+          // → la redirection est uniquement JS, on le note et on tente sans Queue-it
+          log('[!] Queue-it scripts detectes (JS-only) - eventId introuvable dans HTML statique', 'warn');
+          log('[!] Tentative sans Queue-it - si grille vide retry sera declenche', 'warn');
+        }
+      } else {
+        // Fallback : anciennes détections (TM SPA v1)
+        const isQueueItPage = html.includes('queue-it.net') && (
+          html.includes('"integrations":[{') ||
+          html.includes('data-pageid="queue"') ||
+          html.includes('data-pageid="before"')
+        );
+        if (isQueueItPage) {
+          const customerMatch2 = html.match(/"customerId"\s*:\s*"([^"]+)"/);
+          const eventMatch2    = html.match(/"eventId"\s*:\s*"([^"]+)"/);
+          const targetMatch2   = html.match(/"targetUrl"\s*:\s*decodeURIComponent\('([^']+)'\)/);
+          if (customerMatch2 && eventMatch2) {
+            const cid = customerMatch2[1];
+            const eid = eventMatch2[1];
+            const t = targetMatch2 ? targetMatch2[1] : encodeURIComponent(pageUrl);
+            queueItDetectedUrl = `https://wait.ticketmaster.fr/?c=${cid}&e=${eid}&ver=javascript-4.4.2&t=${t}`;
+            log(`[Q] Queue-it detecte (HTML SPA, event=${eid})`, 'queue');
+          } else {
+            log('[!] Queue-it probable (scripts detectes) - attente purchase/init', 'warn');
+          }
         }
       }
     }
@@ -144,7 +188,15 @@ const runTaskAttempt = async (
       if (queueItCookie) tmClient.cookieJar.ingestString(queueItCookie);
       log('[OK] File passee! Acces accorde', 'success');
     } else if (pageRes.status === 200) {
-      log('[OK] Page evenement OK - pas de Queue-it', 'success');
+      const html: string = typeof pageRes.data === 'string' ? pageRes.data : '';
+      const hasQueueHints = html.includes('queue-it.net') || html.includes('wait.ticketmaster.fr') || html.includes('queueclient');
+      if (hasQueueHints) {
+        // Scripts détectés mais eventId inconnu → on log un extrait pour debug
+        const qIdx = html.indexOf('queue-it');
+        const snippet = qIdx !== -1 ? html.slice(Math.max(0, qIdx - 80), qIdx + 200) : '';
+        log(`[!] Queue-it scripts dans HTML mais config non extraite. Snippet: ${snippet.slice(0, 200)}`, 'warn');
+      }
+      log('[OK] Page evenement OK - pas de Queue-it detecte', 'success');
     }
   } catch (e: any) {
     if (e instanceof ProxyRotateError) throw e;
@@ -158,109 +210,87 @@ const runTaskAttempt = async (
 
   if (stopSignal.stopped) return;
 
-  // --- ETAPE 3: Charger la grille tarifaire ---
-  store.updateTask(taskId, { status: 'grille', statusText: 'Chargement grille tarifaire...' });
-  log('>> Chargement grille tarifaire...', 'step');
+  // ═══════════════════════════════════════════════════════════════════
+  // BOUCLE D'ACHAT : grille → place → recaptcha → purchase → discord
+  // TokenPool: POOL_SIZE tâches Capsolver tournent en parallèle.
+  // Quand un token est consommé, un nouveau est immédiatement lancé.
+  // Le prochain token est presque toujours prêt sans attente.
+  // ═══════════════════════════════════════════════════════════════════
+  const POOL_SIZE = 3;
+  let cartCount = 0;
 
-  let seances: any[];
+  const tokenPool = new TokenPool(
+    () => solveRecaptchaInvisible(config.capsolver_api_key, taskId, proxyUrl),
+    POOL_SIZE,
+    log,
+  );
+  log(`[info] TokenPool démarré (${POOL_SIZE} tokens Capsolver en parallèle)`, 'info');
+
   try {
-    seances = await getGrilleTarifaire(tmClient, eventInfo.idmanif, taskId, eventInfo.slug);
-  } catch (e: any) {
-    if (shouldRotate(e)) throw new ProxyRotateError('grille', e);
-    return fail(`Grille tarifaire: ${e.message}`);
-  }
+  while (!stopSignal.stopped) {
+    // --- ETAPE 3: Charger la grille tarifaire ---
+    store.updateTask(taskId, { status: 'grille', statusText: 'Chargement grille tarifaire...' });
+    log('>> Chargement grille tarifaire...', 'step');
 
-  if (stopSignal.stopped) return;
-
-  // --- ETAPE 4: Selection random de place ---
-  let place: any;
-  try {
-    place = pickRandomPlace(seances, taskId, {
-      priceMin: row.priceMin,
-      priceMax: row.priceMax,
-      quantityMin: row.quantityMin,
-      quantityMax: row.quantityMax,
-      section: row.section,
-      dates: row.dates,
-    });
-  } catch (e: any) {
-    return fail(`Selection place: ${e.message}`);
-  }
-
-  log(`[OK] Seance ${place.idseanc} - ${place.llgcatpl} - ${place.qty}x ${place.price}EUR`, 'success');
-  store.updateTask(taskId, { statusText: `${place.llgcatpl} | ${place.qty}x ${place.price}EUR` });
-
-  if (stopSignal.stopped) return;
-
-  // --- ETAPE 5: reCAPTCHA invisible ---
-  store.updateTask(taskId, { status: 'recaptcha', statusText: 'reCAPTCHA invisible...' });
-  log('>> reCAPTCHA invisible - Capsolver (avec proxy)...', 'step');
-  let recaptchaToken: string;
-  try {
-    recaptchaToken = await solveRecaptchaInvisible(config.capsolver_api_key, taskId, proxyUrl);
-  } catch (e: any) {
-    if (shouldRotate(e)) throw new ProxyRotateError('recaptcha', e);
-    return fail(`reCAPTCHA: ${e.message}`);
-  }
-  log('[OK] reCAPTCHA invisible resolu', 'success');
-
-  if (stopSignal.stopped) return;
-
-  // --- ETAPE 6: Purchase init ---
-  store.updateTask(taskId, { status: 'purchase', statusText: 'Creation du panier...' });
-  log('>> POST /api/purchase/init...', 'step');
-
-  let purchaseResult: any;
-  try {
-    purchaseResult = await purchaseInit(
-      tmClient, eventInfo.idmanif, eventInfo.slug,
-      place, recaptchaToken, taskId, queueItCookie,
-      row.offerCode,
-    );
-  } catch (e: any) {
-    if (shouldRotate(e)) throw new ProxyRotateError('purchase', e);
-    return fail(`Purchase init: ${e.message}`);
-  }
-
-  // --- ETAPE 7: Si Queue-it detecte sur purchase (fallback) ---
-  if (purchaseResult.isQueueIt) {
-    store.updateTask(taskId, { status: 'queued', statusText: 'File Queue-it (purchase)...', queuePosition: '?' });
-    log('[Q] Queue-it detecte sur purchase/init - bypass...', 'queue');
-
-    let queueResult: any;
+    let seances: any[];
     try {
-      queueResult = await runQueueIt(
-        purchaseResult.queueItUrl, proxyUrl, config.capsolver_api_key, taskId,
-        (update) => {
-          const pos = update.queuePosition ?? '?';
-          const forecast = update.forecastStatus ?? '';
-          store.updateTask(taskId, { queuePosition: pos, forecastStatus: forecast, statusText: `File: ${pos} devant` });
-          if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
-        },
-        stopSignal,
-        config.poll_status_max_minutes
-      );
+      seances = await getGrilleTarifaire(tmClient, eventInfo.idmanif, taskId, eventInfo.slug);
     } catch (e: any) {
-      if (shouldRotate(e)) throw new ProxyRotateError('queue-it-purchase', e);
-      return fail(`Queue-it: ${e.message}`);
+      if (shouldRotate(e)) throw new ProxyRotateError('grille', e);
+      return fail(`Grille tarifaire: ${e.message}`);
     }
+
+    // Si la grille est vide et qu'on n'a pas encore de cookie Queue-it,
+    // c'est souvent signe que Queue-it protège l'accès.
+    if (seances.length === 0 && !queueItCookie) {
+      log('[!] Grille vide sans Queue-it cookie - event probablement protege par Queue-it JS', 'warn');
+      log('[!] Ajoute la Queue-it URL manuellement dans le CSV ou verifie le snippet HTML ci-dessus', 'warn');
+      return fail('Grille vide - Queue-it non detecte automatiquement. Verifier les logs.');
+    }
+
+    if (stopSignal.stopped) break;
+
+    // --- ETAPE 4: Selection random de place ---
+    let place: any;
+    try {
+      place = pickRandomPlace(seances, taskId, {
+        priceMin: row.priceMin,
+        priceMax: row.priceMax,
+        quantityMin: row.quantityMin,
+        quantityMax: row.quantityMax,
+        section: row.section,
+        dates: row.dates,
+      });
+    } catch (e: any) {
+      return fail(`Selection place: ${e.message}`);
+    }
+
+    log(`[OK] Seance ${place.idseanc} - ${place.llgcatpl} - ${place.qty}x ${place.price}EUR`, 'success');
+    store.updateTask(taskId, { statusText: `${place.llgcatpl} | ${place.qty}x ${place.price}EUR` });
+
+    if (stopSignal.stopped) break;
+
+    // --- ETAPE 5: reCAPTCHA invisible depuis le pool (quasi-instantané) ---
+    store.updateTask(taskId, { status: 'recaptcha', statusText: `reCAPTCHA (pool: ${tokenPool.pending} prêts)...` });
+    log(`>> reCAPTCHA invisible - pool (${tokenPool.pending} en attente)...`, 'step');
+    let recaptchaToken: string;
+    try {
+      recaptchaToken = await tokenPool.next();
+      log('[OK] reCAPTCHA token prêt (pool)', 'success');
+    } catch (e: any) {
+      if (shouldRotate(e)) throw new ProxyRotateError('recaptcha', e);
+      return fail(`reCAPTCHA: ${e.message}`);
+    }
+
+    if (stopSignal.stopped) break;
 
     if (stopSignal.stopped) return;
 
-    queueItCookie = queueResult.queueItCookie;
-    log('[OK] File passee! 2eme tentative purchase/init...', 'success');
-    store.updateTask(taskId, { status: 'purchase', statusText: 'Panier (post-queue)...' });
+    // --- ETAPE 6: Purchase init ---
+    store.updateTask(taskId, { status: 'purchase', statusText: 'Creation du panier...' });
+    log('>> POST /api/purchase/init...', 'step');
 
-    log('>> reCAPTCHA invisible (post-queue)...', 'step');
-    try {
-      recaptchaToken = await solveRecaptchaInvisible(config.capsolver_api_key, taskId, proxyUrl);
-    } catch (e: any) {
-      if (shouldRotate(e)) throw new ProxyRotateError('recaptcha-post-queue', e);
-      return fail(`reCAPTCHA post-queue: ${e.message}`);
-    }
-    log('[OK] reCAPTCHA resolu', 'success');
-
-    log('>> POST /api/purchase/init (post-queue)...', 'step');
+    let purchaseResult: any;
     try {
       purchaseResult = await purchaseInit(
         tmClient, eventInfo.idmanif, eventInfo.slug,
@@ -268,67 +298,123 @@ const runTaskAttempt = async (
         row.offerCode,
       );
     } catch (e: any) {
-      if (shouldRotate(e)) throw new ProxyRotateError('purchase-post-queue', e);
-      return fail(`Purchase post-queue: ${e.message}`);
+      if (shouldRotate(e)) throw new ProxyRotateError('purchase', e);
+      return fail(`Purchase init: ${e.message}`);
     }
 
-    if (purchaseResult.isQueueIt) return fail('Queue-it re-detecte - abandon');
+    // --- ETAPE 7: Si Queue-it detecte sur purchase (fallback) ---
+    if (purchaseResult.isQueueIt) {
+      store.updateTask(taskId, { status: 'queued', statusText: 'File Queue-it (purchase)...', queuePosition: '?' });
+      log('[Q] Queue-it detecte sur purchase/init - bypass...', 'queue');
+
+      let queueResult: any;
+      try {
+        queueResult = await runQueueIt(
+          purchaseResult.queueItUrl, proxyUrl, config.capsolver_api_key, taskId,
+          (update) => {
+            const pos = update.queuePosition ?? '?';
+            const forecast = update.forecastStatus ?? '';
+            store.updateTask(taskId, { queuePosition: pos, forecastStatus: forecast, statusText: `File: ${pos} devant` });
+            if (forecast === 'FirstInLine') log('[*] Premier dans la file!', 'queue');
+          },
+          stopSignal,
+          config.poll_status_max_minutes
+        );
+      } catch (e: any) {
+        if (shouldRotate(e)) throw new ProxyRotateError('queue-it-purchase', e);
+        return fail(`Queue-it: ${e.message}`);
+      }
+
+      if (stopSignal.stopped) break;
+
+      queueItCookie = queueResult.queueItCookie;
+      log('[OK] File passee! 2eme tentative purchase/init...', 'success');
+      store.updateTask(taskId, { status: 'purchase', statusText: 'Panier (post-queue)...' });
+
+      log('>> reCAPTCHA invisible (post-queue) - pool...', 'step');
+      try {
+        recaptchaToken = await tokenPool.next();
+      } catch (e: any) {
+        if (shouldRotate(e)) throw new ProxyRotateError('recaptcha-post-queue', e);
+        return fail(`reCAPTCHA post-queue: ${e.message}`);
+      }
+      log('[OK] reCAPTCHA resolu', 'success');
+
+      log('>> POST /api/purchase/init (post-queue)...', 'step');
+      try {
+        purchaseResult = await purchaseInit(
+          tmClient, eventInfo.idmanif, eventInfo.slug,
+          place, recaptchaToken, taskId, queueItCookie,
+          row.offerCode,
+        );
+      } catch (e: any) {
+        if (shouldRotate(e)) throw new ProxyRotateError('purchase-post-queue', e);
+        return fail(`Purchase post-queue: ${e.message}`);
+      }
+
+      if (purchaseResult.isQueueIt) return fail('Queue-it re-detecte - abandon');
+    }
+
+    // --- ETAPE 7bis: Verification contiguite ---
+    const basket = purchaseResult.basket;
+    const firstItem = basket.items?.[0];
+    const isContiguous = !firstItem?.warningNoContiguousTickets;
+
+    if (row.acceptContiguous && !isContiguous) {
+      log('[!] Non contigu - retry immediat pour nouvelles places...', 'warn');
+      continue; // relancer sans fail : essayer d'autres places
+    }
+
+    // --- ETAPE 8: Succes ---
+    cartCount++;
+    const sub = basket.items?.[0]?.subEventBasketDto?.[0];
+    const tickets = sub?.tickets ?? [];
+    const seatsStr = tickets.map((t: any) => `${t.llgzone} R${t.rgplac} S${t.numplac}`).join(' | ') || 'Automatique';
+
+    log(`[OK] PANIER #${cartCount} CREE! ID #${basket.id} - ${basket.price}EUR${isContiguous ? ' | contigu' : ' | non-contigu'}`, 'success');
+    log(`  ${sub?.llgcatpl ?? place.llgcatpl} | ${seatsStr}`, 'success');
+
+    store.updateTask(taskId, {
+      status: 'success',
+      statusText: `#${cartCount}x | Last: #${basket.id} ${basket.price}EUR`,
+      basketId: basket.id,
+      price: basket.price,
+      category: sub?.llgcatpl ?? place.llgcatpl,
+      seats: seatsStr,
+      completedAt: new Date(),
+    });
+
+    // --- ETAPE 9: Session tm.sdss.fr ---
+    let sessionUrl = `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
+    try {
+      const sessionResult = await sendSession(basket, cookies, eventInfo, taskId);
+      sessionUrl = sessionResult.sessionUrl;
+    } catch (e: any) {
+      log(`[!] Session: ${e.message} - fallback basket URL`, 'warn');
+    }
+
+    // --- ETAPE 10: Notification Discord ---
+    const webhookUrl = row.webhook || config.default_webhook_url;
+    const proxyLabel = store.state.tasks.find(t => t.id === taskId)?.proxyLabel ?? proxyUrl.slice(-8);
+    try {
+      await sendDiscordNotification(
+        webhookUrl, '',
+        basket, cookies, eventInfo,
+        proxyLabel,
+        sessionUrl,
+        place.dateSeance,
+        isContiguous,
+      );
+      log('[OK] Notification Discord envoyee', 'success');
+    } catch (e: any) {
+      log(`[!] Discord: ${e.message}`, 'warn');
+    }
+
+    // Boucle immédiate — nouveau panier avec les mêmes cookies/session
+    log(`>> Relance immediate (#${cartCount + 1}) - pool: ${tokenPool.pending} tokens prêts...`, 'step');
   }
-
-  // --- ETAPE 7bis: Verification contiguite ---
-  const basket = purchaseResult.basket;
-  const firstItem = basket.items?.[0];
-  const isContiguous = !firstItem?.warningNoContiguousTickets;
-
-  if (row.acceptContiguous && !isContiguous) {
-    return fail('Places non contiguees rejetees (Accept_Contigous=true)');
-  }
-
-  // --- ETAPE 8: Succes ---
-  const sub = basket.items?.[0]?.subEventBasketDto?.[0];
-  const tickets = sub?.tickets ?? [];
-  const seatsStr = tickets.map((t: any) => `${t.llgzone} R${t.rgplac} S${t.numplac}`).join(' | ') || 'Automatique';
-
-  log(`[OK] PANIER CREE! ID #${basket.id} - ${basket.price}EUR${isContiguous ? ' | contigu' : ' | non-contigu'}`, 'success');
-  log(`  ${sub?.llgcatpl ?? place.llgcatpl} | ${seatsStr}`, 'success');
-
-  store.updateTask(taskId, {
-    status: 'success',
-    statusText: `#${basket.id} - ${basket.price}EUR`,
-    basketId: basket.id,
-    price: basket.price,
-    category: sub?.llgcatpl ?? place.llgcatpl,
-    seats: seatsStr,
-    completedAt: new Date(),
-  });
-
-  // --- ETAPE 9: Session tm.sdss.fr ---
-  log('>> Envoi session tm.sdss.fr...', 'step');
-  let sessionUrl = `https://www.ticketmaster.fr/fr/panier?basketId=${basket.id}`;
-  try {
-    const sessionResult = await sendSession(basket, cookies, eventInfo, taskId);
-    sessionUrl = sessionResult.sessionUrl;
-    log(`[OK] Session URL: ${sessionUrl.slice(0, 60)}`, 'success');
-  } catch (e: any) {
-    log(`[!] Session: ${e.message} - fallback basket URL`, 'warn');
-  }
-
-  // --- ETAPE 10: Notification Discord ---
-  log('>> Envoi notification Discord...', 'step');
-  const webhookUrl = row.webhook || config.default_webhook_url;
-  const proxyLabel = store.state.tasks.find(t => t.id === taskId)?.proxyLabel ?? proxyUrl.slice(-8);
-  try {
-    await sendDiscordNotification(
-      webhookUrl, '',
-      basket, cookies, eventInfo,
-      proxyLabel,
-      sessionUrl,
-      place.dateSeance,
-      isContiguous,
-    );
-    log('[OK] Notification Discord envoyee', 'success');
-  } catch (e: any) {
-    log(`[!] Discord: ${e.message}`, 'warn');
+  } finally {
+    tokenPool.destroy();
   }
 };
 

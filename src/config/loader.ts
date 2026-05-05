@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: AppConfig = {
   capsolver_api_key: 'CAP-XXXXX_REMPLACER_PAR_VOTRE_CLE',
   default_webhook_url: 'https://discord.com/api/webhooks/REMPLACER',
   poll_status_max_minutes: 30,
-  request_delay_ms: 3000,
+  request_delay_ms: 2000,
   license_key: '',
 };
 
